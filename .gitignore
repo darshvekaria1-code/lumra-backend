@@ -1,0 +1,8 @@
+node_modules/
+.env
+users.json
+conversation_logs.json
+analytics.json
+maintenance.json
+server.log
+
