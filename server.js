@@ -107,81 +107,34 @@ async function sendDemoKeyRequestEmail(name, email) {
         appendFileSync(emailLogFile, logEntry, "utf-8")
         log(`[Email] Request logged to file: ${name} (${email})`)
 
-        // Try to send email - if credentials are not set, it will fail gracefully
-        const emailUser = process.env.EMAIL_USER || 'darshvekaria1@gmail.com'
-        const emailPassword = process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_PASSWORD
+        // Check for Resend API key (preferred) or fallback to Gmail SMTP
+        const resendApiKey = process.env.RESEND_API_KEY
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
+        const toEmail = process.env.RESEND_TO_EMAIL || 'darshvekaria1@gmail.com'
 
-        log(`[Email] Checking credentials - User: ${emailUser}, Password set: ${!!emailPassword}`)
+        if (resendApiKey) {
+            // Use Resend API (much more reliable)
+            log(`[Email] Using Resend API for email delivery...`)
+            const resend = new Resend(resendApiKey)
 
-        if (!emailPassword) {
-            log(`[Email] ❌ No email password configured. Set EMAIL_APP_PASSWORD in Render environment variables.`, "error")
-            log(`[Email] Request saved to file only. Check demo_key_requests.log for all requests.`)
-            return { messageId: 'logged-only', error: 'No email password configured' }
-        }
-
-        log(`[Email] Attempting to send email to darshvekaria1@gmail.com...`)
-
-        // Try port 465 (SSL) first, fallback to 587 (TLS)
-        const emailPromise = (async () => {
-            // Try port 465 with SSL first (more reliable)
-            let transporter = nodemailer.createTransport({
-                host: 'smtp.gmail.com',
-                port: 465,
-                secure: true, // true for 465
-                auth: {
-                    user: emailUser,
-                    pass: emailPassword
-                },
-                connectionTimeout: 15000,
-                greetingTimeout: 15000,
-                socketTimeout: 15000,
-                tls: {
-                    rejectUnauthorized: false
-                }
-            })
-
-            // Try to verify, but don't fail if it times out
-            try {
-                await Promise.race([
-                    transporter.verify(),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Verification timeout')), 3000))
-                ])
-                log(`[Email] ✅ SMTP connection verified (port 465)`)
-            } catch (verifyError) {
-                log(`[Email] ⚠️ Port 465 verification failed, trying port 587...`)
-                // Fallback to port 587
-                transporter = nodemailer.createTransport({
-                    host: 'smtp.gmail.com',
-                    port: 587,
-                    secure: false, // false for 587
-                    auth: {
-                        user: emailUser,
-                        pass: emailPassword
-                    },
-                    connectionTimeout: 15000,
-                    greetingTimeout: 15000,
-                    socketTimeout: 15000,
-                    requireTLS: true,
-                    tls: {
-                        rejectUnauthorized: false
-                    }
-                })
-                log(`[Email] ⚠️ Attempting to send via port 587 (TLS)...`)
-            }
-
-            const mailOptions = {
-                from: `"Lumra AI" <${emailUser}>`,
-                to: 'darshvekaria1@gmail.com',
+            const emailPromise = resend.emails.send({
+                from: `Lumra AI <${fromEmail}>`,
+                to: [toEmail],
                 replyTo: email,
                 subject: `🔑 New Demo Key Request - ${name}`,
                 html: `
-                    <h2>New Demo Key Request</h2>
-                    <p><strong>Name:</strong> ${name}</p>
-                    <p><strong>Email:</strong> ${email}</p>
-                    <p><strong>Requested At:</strong> ${new Date().toLocaleString()}</p>
-                    <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
-                    <hr>
-                    <p>Please generate a demo key for this user and send it to: <strong>${email}</strong></p>
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                        <h2 style="color: #333; border-bottom: 2px solid #6366f1; padding-bottom: 10px;">New Demo Key Request</h2>
+                        <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                            <p style="margin: 10px 0;"><strong>Name:</strong> ${name}</p>
+                            <p style="margin: 10px 0;"><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
+                            <p style="margin: 10px 0;"><strong>Requested At:</strong> ${new Date().toLocaleString()}</p>
+                            <p style="margin: 10px 0;"><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+                        </div>
+                        <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+                        <p style="color: #666;">Please generate a demo key for this user and send it to: <strong>${email}</strong></p>
+                        <p style="color: #999; font-size: 12px; margin-top: 30px;">This is an automated notification from Lumra AI.</p>
+                    </div>
                 `,
                 text: `
 New Demo Key Request
@@ -189,24 +142,26 @@ New Demo Key Request
 Name: ${name}
 Email: ${email}
 Requested At: ${new Date().toLocaleString()}
+Timestamp: ${new Date().toISOString()}
 
 Please generate a demo key for this user and send it to: ${email}
                 `
-            }
+            })
 
-            return await transporter.sendMail(mailOptions)
-        })()
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Resend API timeout')), 10000)
+            )
 
-        // Wait max 20 seconds for email, then give up
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Email timeout after 20 seconds')), 20000)
-        )
-
-        const info = await Promise.race([emailPromise, timeoutPromise])
-        log(`[Email] ✅ Email sent successfully! Message ID: ${info.messageId}`)
-        log(`[Email] ✅ Email sent to: darshvekaria1@gmail.com`)
-        log(`[Email] ✅ Response: ${JSON.stringify(info.response)}`)
-        return info
+            const info = await Promise.race([emailPromise, timeoutPromise])
+            log(`[Email] ✅ Email sent successfully via Resend! Message ID: ${info.data?.id || 'unknown'}`)
+            log(`[Email] ✅ Email sent to: ${toEmail}`)
+            return info
+        } else {
+            // Fallback: Try Gmail SMTP (may timeout, but request is still saved)
+            log(`[Email] ⚠️ RESEND_API_KEY not set. Using file logging only.`)
+            log(`[Email] To enable email: Get free API key from https://resend.com and set RESEND_API_KEY in Render`)
+            return { messageId: 'logged-only', error: 'Resend API key not configured' }
+        }
     } catch (error) {
         log(`[Email] ❌ Error sending email: ${error.message}`, "error")
         log(`[Email] ❌ Error stack: ${error.stack}`, "error")
