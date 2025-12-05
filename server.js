@@ -8850,6 +8850,28 @@ app.post("/api/demo/request", apiLimiter, async (req, res) => {
     }
 })
 
+// Get demo key requests (for admin/developer to view)
+app.get("/api/demo/requests", requireDeveloperAuth, async (req, res) => {
+    try {
+        const DEMO_REQUESTS_FILE = join(__dirname, "demo_requests.json")
+        
+        if (!existsSync(DEMO_REQUESTS_FILE)) {
+            return res.json({ requests: [] })
+        }
+
+        const data = readFileSync(DEMO_REQUESTS_FILE, "utf-8")
+        const requests = JSON.parse(data)
+        
+        // Sort by timestamp (newest first)
+        requests.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+
+        res.json({ requests })
+    } catch (error) {
+        log(`[Demo Requests] Error loading requests: ${error.message}`, "error")
+        res.status(500).json({ error: "Error loading requests" })
+    }
+})
+
 app.post("/api/demo/validate", apiLimiter, async (req, res) => {
     try {
         const { key } = req.body
