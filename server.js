@@ -8719,21 +8719,11 @@ app.post("/api/demo/validate", apiLimiter, async (req, res) => {
             })
         }
 
-        const demoKeysData = loadDemoKeys()
         const trimmedKey = key.trim()
 
-        // Check if key exists and is active
-        const validKey = demoKeysData.keys.find(
-            k => k.key === trimmedKey && k.active === true
-        )
-
-        if (validKey) {
-            // Update last used timestamp
-            validKey.lastUsed = new Date().toISOString()
-            validKey.usageCount = (validKey.usageCount || 0) + 1
-            saveDemoKeys(demoKeysData)
-
-            log(`[Demo Key] Valid key used: ${trimmedKey.substring(0, 8)}...`)
+        // Only accept the specific demo key: 11223344
+        if (trimmedKey === "11223344") {
+            log(`[Demo Key] Valid key used: 11223344`)
 
             return res.json({
                 valid: true,
