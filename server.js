@@ -121,28 +121,36 @@ async function sendDemoKeyRequestEmail(name, email) {
 
         log(`[Email] Attempting to send email to darshvekaria1@gmail.com...`)
 
-        // Set timeout for email sending (10 seconds max)
+        // Set timeout for email sending (20 seconds max)
         const emailPromise = (async () => {
             const transporter = nodemailer.createTransport({
-                service: 'gmail',
+                host: 'smtp.gmail.com',
+                port: 587,
+                secure: false, // true for 465, false for other ports
                 auth: {
                     user: emailUser,
                     pass: emailPassword
                 },
-                timeout: 10000, // 10 second timeout
-                secure: true,
+                connectionTimeout: 20000, // 20 seconds
+                greetingTimeout: 20000,
+                socketTimeout: 20000,
                 tls: {
-                    rejectUnauthorized: false
+                    rejectUnauthorized: false,
+                    ciphers: 'SSLv3'
                 }
             })
 
-            // Verify connection first
+            // Verify connection first (with shorter timeout)
             try {
-                await transporter.verify()
+                await Promise.race([
+                    transporter.verify(),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Verification timeout')), 5000))
+                ])
                 log(`[Email] ✅ SMTP connection verified`)
             } catch (verifyError) {
-                log(`[Email] ❌ SMTP verification failed: ${verifyError.message}`, "error")
-                throw new Error(`SMTP verification failed: ${verifyError.message}`)
+                log(`[Email] ⚠️ SMTP verification failed or timed out: ${verifyError.message}`, "error")
+                log(`[Email] ⚠️ Attempting to send anyway...`)
+                // Don't throw - try to send anyway
             }
 
             const mailOptions = {
@@ -173,9 +181,9 @@ Please generate a demo key for this user and send it to: ${email}
             return await transporter.sendMail(mailOptions)
         })()
 
-        // Wait max 10 seconds for email, then give up
+        // Wait max 20 seconds for email, then give up
         const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Email timeout after 10 seconds')), 10000)
+            setTimeout(() => reject(new Error('Email timeout after 20 seconds')), 20000)
         )
 
         const info = await Promise.race([emailPromise, timeoutPromise])
@@ -8857,8 +8865,18 @@ app.post("/api/demo/request", apiLimiter, async (req, res) => {
         log(`[Demo Key Request] New request from: ${trimmedName} (${trimmedEmail})`)
 
         // Send email notification asynchronously (don't wait for it)
+        // Also log to a simple text file for easy access
+        const simpleLogFile = join(__dirname, "demo_requests_simple.txt")
+        const simpleLogEntry = `${new Date().toISOString()} | ${trimmedName} | ${trimmedEmail}\n`
+        try {
+            appendFileSync(simpleLogFile, simpleLogEntry, "utf-8")
+            log(`[Demo Key Request] ✅ Request saved to demo_requests_simple.txt`)
+        } catch (logErr) {
+            log(`[Demo Key Request] Error writing simple log: ${logErr.message}`)
+        }
+
         sendDemoKeyRequestEmail(trimmedName, trimmedEmail).catch((emailError) => {
-            log(`[Demo Key Request] Error sending email: ${emailError.message}`, "error")
+            log(`[Demo Key Request] ⚠️ Email sending failed (but request is saved): ${emailError.message}`, "error")
         })
 
         // Return success immediately (don't wait for email)
