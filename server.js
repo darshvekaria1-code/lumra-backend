@@ -8882,7 +8882,7 @@ app.post("/api/newsletter/subscribe", apiLimiter, async (req, res) => {
         }
 
         // Check if email already exists
-        const existingSubscriber = subscribers.find((sub: any) => sub.email.toLowerCase() === email.toLowerCase())
+                const existingSubscriber = subscribers.find((sub) => sub.email.toLowerCase() === email.toLowerCase())
         if (existingSubscriber) {
             return res.json({
                 success: true,
