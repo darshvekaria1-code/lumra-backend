@@ -1,6 +1,27 @@
-import { ChromaClient } from "chromadb"
 import { join } from "path"
 import { existsSync, mkdirSync } from "fs"
+
+// Try to import ChromaDB - it's optional and may not be installed in production
+let ChromaClient = null
+let chromadbAvailable = false
+
+// Lazy load ChromaDB
+async function loadChromaDB() {
+    if (ChromaClient !== null) {
+        return chromadbAvailable
+    }
+    
+    try {
+        const chromadb = await import("chromadb")
+        ChromaClient = chromadb.ChromaClient
+        chromadbAvailable = true
+        return true
+    } catch (error) {
+        console.log("[Vector DB] ⚠️  ChromaDB not available - RAG features will be disabled")
+        chromadbAvailable = false
+        return false
+    }
+}
 
 // Initialize ChromaDB client
 // For local development, ChromaDB runs in-memory or can use persistent storage
@@ -11,6 +32,13 @@ let documentsCollection = null
  * Initialize ChromaDB client and collection
  */
 export async function initializeVectorDB() {
+    // Try to load ChromaDB if not already loaded
+    const isAvailable = await loadChromaDB()
+    if (!isAvailable || !ChromaClient) {
+        console.log(`[Vector DB] ⚠️  ChromaDB not installed - RAG features disabled`)
+        return false
+    }
+
     try {
         // ChromaDB can run in-memory or with persistent storage
         // For production, you might want to run a ChromaDB server
