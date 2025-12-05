@@ -121,36 +121,52 @@ async function sendDemoKeyRequestEmail(name, email) {
 
         log(`[Email] Attempting to send email to darshvekaria1@gmail.com...`)
 
-        // Set timeout for email sending (20 seconds max)
+        // Try port 465 (SSL) first, fallback to 587 (TLS)
         const emailPromise = (async () => {
-            const transporter = nodemailer.createTransport({
+            // Try port 465 with SSL first (more reliable)
+            let transporter = nodemailer.createTransport({
                 host: 'smtp.gmail.com',
-                port: 587,
-                secure: false, // true for 465, false for other ports
+                port: 465,
+                secure: true, // true for 465
                 auth: {
                     user: emailUser,
                     pass: emailPassword
                 },
-                connectionTimeout: 20000, // 20 seconds
-                greetingTimeout: 20000,
-                socketTimeout: 20000,
+                connectionTimeout: 15000,
+                greetingTimeout: 15000,
+                socketTimeout: 15000,
                 tls: {
-                    rejectUnauthorized: false,
-                    ciphers: 'SSLv3'
+                    rejectUnauthorized: false
                 }
             })
 
-            // Verify connection first (with shorter timeout)
+            // Try to verify, but don't fail if it times out
             try {
                 await Promise.race([
                     transporter.verify(),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Verification timeout')), 5000))
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Verification timeout')), 3000))
                 ])
-                log(`[Email] ✅ SMTP connection verified`)
+                log(`[Email] ✅ SMTP connection verified (port 465)`)
             } catch (verifyError) {
-                log(`[Email] ⚠️ SMTP verification failed or timed out: ${verifyError.message}`, "error")
-                log(`[Email] ⚠️ Attempting to send anyway...`)
-                // Don't throw - try to send anyway
+                log(`[Email] ⚠️ Port 465 verification failed, trying port 587...`)
+                // Fallback to port 587
+                transporter = nodemailer.createTransport({
+                    host: 'smtp.gmail.com',
+                    port: 587,
+                    secure: false, // false for 587
+                    auth: {
+                        user: emailUser,
+                        pass: emailPassword
+                    },
+                    connectionTimeout: 15000,
+                    greetingTimeout: 15000,
+                    socketTimeout: 15000,
+                    requireTLS: true,
+                    tls: {
+                        rejectUnauthorized: false
+                    }
+                })
+                log(`[Email] ⚠️ Attempting to send via port 587 (TLS)...`)
             }
 
             const mailOptions = {
