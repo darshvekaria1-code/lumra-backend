@@ -98,46 +98,49 @@ function saveMaintenanceMode(enabled, message = "") {
     }
 }
 
-// Email configuration function
+// Email configuration function (runs asynchronously, doesn't block)
 async function sendDemoKeyRequestEmail(name, email) {
     try {
+        // Always log to file first (fast and reliable)
+        const emailLogFile = join(__dirname, "demo_key_requests.log")
+        const logEntry = `[${new Date().toISOString()}] Name: ${name}, Email: ${email}\n`
+        appendFileSync(emailLogFile, logEntry, "utf-8")
+        log(`[Email] Request logged to file: ${name} (${email})`)
+
         // Try to send email - if credentials are not set, it will fail gracefully
-        // User needs to set EMAIL_USER and EMAIL_APP_PASSWORD in environment variables
         const emailUser = process.env.EMAIL_USER || 'darshvekaria1@gmail.com'
         const emailPassword = process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_PASSWORD
 
         if (!emailPassword) {
-            // If no password is set, just log the request (email won't be sent)
-            log(`[Email] No email password configured. Request logged: ${name} (${email})`)
-            // Still log to file for manual review
-            const emailLogFile = join(__dirname, "demo_key_requests.log")
-            const logEntry = `[${new Date().toISOString()}] Name: ${name}, Email: ${email}\n`
-            appendFileSync(emailLogFile, logEntry, "utf-8")
+            log(`[Email] No email password configured. Request saved to file only.`)
             return { messageId: 'logged-only' }
         }
 
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: emailUser,
-                pass: emailPassword
-            }
-        })
+        // Set timeout for email sending (5 seconds max)
+        const emailPromise = (async () => {
+            const transporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: {
+                    user: emailUser,
+                    pass: emailPassword
+                },
+                timeout: 5000 // 5 second timeout
+            })
 
-        const mailOptions = {
-            from: emailUser,
-            to: 'darshvekaria1@gmail.com',
-            subject: `New Demo Key Request - ${name}`,
-            html: `
-                <h2>New Demo Key Request</h2>
-                <p><strong>Name:</strong> ${name}</p>
-                <p><strong>Email:</strong> ${email}</p>
-                <p><strong>Requested At:</strong> ${new Date().toLocaleString()}</p>
-                <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
-                <hr>
-                <p>Please generate a demo key for this user and send it to: <strong>${email}</strong></p>
-            `,
-            text: `
+            const mailOptions = {
+                from: emailUser,
+                to: 'darshvekaria1@gmail.com',
+                subject: `New Demo Key Request - ${name}`,
+                html: `
+                    <h2>New Demo Key Request</h2>
+                    <p><strong>Name:</strong> ${name}</p>
+                    <p><strong>Email:</strong> ${email}</p>
+                    <p><strong>Requested At:</strong> ${new Date().toLocaleString()}</p>
+                    <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+                    <hr>
+                    <p>Please generate a demo key for this user and send it to: <strong>${email}</strong></p>
+                `,
+                text: `
 New Demo Key Request
 
 Name: ${name}
@@ -145,23 +148,23 @@ Email: ${email}
 Requested At: ${new Date().toLocaleString()}
 
 Please generate a demo key for this user and send it to: ${email}
-            `
-        }
+                `
+            }
 
-        const info = await transporter.sendMail(mailOptions)
+            return await transporter.sendMail(mailOptions)
+        })()
+
+        // Wait max 5 seconds for email, then give up
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Email timeout')), 5000)
+        )
+
+        const info = await Promise.race([emailPromise, timeoutPromise])
         log(`[Email] Demo key request email sent: ${info.messageId}`)
         return info
     } catch (error) {
-        log(`[Email] Error sending demo key request email: ${error.message}`, "error")
-        // Log to file as backup
-        try {
-            const emailLogFile = join(__dirname, "demo_key_requests.log")
-            const logEntry = `[${new Date().toISOString()}] ERROR - Name: ${name}, Email: ${email}, Error: ${error.message}\n`
-            appendFileSync(emailLogFile, logEntry, "utf-8")
-        } catch (logError) {
-            log(`[Email] Error logging to file: ${logError.message}`, "error")
-        }
-        // Don't throw - allow request to succeed even if email fails
+        log(`[Email] Error sending email (request still saved): ${error.message}`, "error")
+        // Request is already saved to file, so this is fine
         return { messageId: 'failed', error: error.message }
     }
 }
@@ -8828,15 +8831,12 @@ app.post("/api/demo/request", apiLimiter, async (req, res) => {
 
         log(`[Demo Key Request] New request from: ${trimmedName} (${trimmedEmail})`)
 
-        // Send email notification
-        try {
-            await sendDemoKeyRequestEmail(trimmedName, trimmedEmail)
-            log(`[Demo Key Request] Email sent successfully for: ${trimmedEmail}`)
-        } catch (emailError) {
+        // Send email notification asynchronously (don't wait for it)
+        sendDemoKeyRequestEmail(trimmedName, trimmedEmail).catch((emailError) => {
             log(`[Demo Key Request] Error sending email: ${emailError.message}`, "error")
-            // Don't fail the request if email fails - it's still saved to file
-        }
+        })
 
+        // Return success immediately (don't wait for email)
         return res.json({
             success: true,
             message: "Demo key request submitted successfully. We'll send you a key soon!"
