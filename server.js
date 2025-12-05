@@ -15,6 +15,7 @@ import { readFileSync, writeFileSync, existsSync, appendFileSync, statSync, mkdi
 import { fileURLToPath } from "url"
 import { dirname, join } from "path"
 import multer from "multer"
+import nodemailer from "nodemailer"
 import { initializeRAG, processAndStoreDocument, retrieveRelevantDocuments, formatRetrievedContext, removeDocument, isRAGAvailable, createEmbedding } from "./rag.js"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -94,6 +95,74 @@ function saveMaintenanceMode(enabled, message = "") {
         console.error("[Maintenance Mode] ❌ Error saving maintenance mode:", error)
         console.error("[Maintenance Mode] Error stack:", error.stack)
         return null
+    }
+}
+
+// Email configuration function
+async function sendDemoKeyRequestEmail(name, email) {
+    try {
+        // Try to send email - if credentials are not set, it will fail gracefully
+        // User needs to set EMAIL_USER and EMAIL_APP_PASSWORD in environment variables
+        const emailUser = process.env.EMAIL_USER || 'darshvekaria1@gmail.com'
+        const emailPassword = process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_PASSWORD
+
+        if (!emailPassword) {
+            // If no password is set, just log the request (email won't be sent)
+            log(`[Email] No email password configured. Request logged: ${name} (${email})`)
+            // Still log to file for manual review
+            const emailLogFile = join(__dirname, "demo_key_requests.log")
+            const logEntry = `[${new Date().toISOString()}] Name: ${name}, Email: ${email}\n`
+            appendFileSync(emailLogFile, logEntry, "utf-8")
+            return { messageId: 'logged-only' }
+        }
+
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: emailUser,
+                pass: emailPassword
+            }
+        })
+
+        const mailOptions = {
+            from: emailUser,
+            to: 'darshvekaria1@gmail.com',
+            subject: `New Demo Key Request - ${name}`,
+            html: `
+                <h2>New Demo Key Request</h2>
+                <p><strong>Name:</strong> ${name}</p>
+                <p><strong>Email:</strong> ${email}</p>
+                <p><strong>Requested At:</strong> ${new Date().toLocaleString()}</p>
+                <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+                <hr>
+                <p>Please generate a demo key for this user and send it to: <strong>${email}</strong></p>
+            `,
+            text: `
+New Demo Key Request
+
+Name: ${name}
+Email: ${email}
+Requested At: ${new Date().toLocaleString()}
+
+Please generate a demo key for this user and send it to: ${email}
+            `
+        }
+
+        const info = await transporter.sendMail(mailOptions)
+        log(`[Email] Demo key request email sent: ${info.messageId}`)
+        return info
+    } catch (error) {
+        log(`[Email] Error sending demo key request email: ${error.message}`, "error")
+        // Log to file as backup
+        try {
+            const emailLogFile = join(__dirname, "demo_key_requests.log")
+            const logEntry = `[${new Date().toISOString()}] ERROR - Name: ${name}, Email: ${email}, Error: ${error.message}\n`
+            appendFileSync(emailLogFile, logEntry, "utf-8")
+        } catch (logError) {
+            log(`[Email] Error logging to file: ${logError.message}`, "error")
+        }
+        // Don't throw - allow request to succeed even if email fails
+        return { messageId: 'failed', error: error.message }
     }
 }
 
@@ -8758,6 +8827,15 @@ app.post("/api/demo/request", apiLimiter, async (req, res) => {
         writeFileSync(DEMO_REQUESTS_FILE, JSON.stringify(requests, null, 2), "utf-8")
 
         log(`[Demo Key Request] New request from: ${trimmedName} (${trimmedEmail})`)
+
+        // Send email notification
+        try {
+            await sendDemoKeyRequestEmail(trimmedName, trimmedEmail)
+            log(`[Demo Key Request] Email sent successfully for: ${trimmedEmail}`)
+        } catch (emailError) {
+            log(`[Demo Key Request] Error sending email: ${emailError.message}`, "error")
+            // Don't fail the request if email fails - it's still saved to file
+        }
 
         return res.json({
             success: true,
