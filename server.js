@@ -15,7 +15,7 @@ import { readFileSync, writeFileSync, existsSync, appendFileSync, statSync, mkdi
 import { fileURLToPath } from "url"
 import { dirname, join } from "path"
 import multer from "multer"
-import nodemailer from "nodemailer"
+import { Resend } from "resend"
 import { initializeRAG, processAndStoreDocument, retrieveRelevantDocuments, formatRetrievedContext, removeDocument, isRAGAvailable, createEmbedding } from "./rag.js"
 
 const __filename = fileURLToPath(import.meta.url)
