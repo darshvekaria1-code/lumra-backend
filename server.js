@@ -170,6 +170,65 @@ Please generate a demo key for this user and send it to: ${email}
     }
 }
 
+// Email notification for contact form submissions
+async function sendContactEmailNotification(email, message) {
+    try {
+        const resendApiKey = process.env.RESEND_API_KEY
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
+        const toEmail = process.env.RESEND_TO_EMAIL || 'darshvekaria1@gmail.com'
+
+        if (!resendApiKey) {
+            log(`[Contact Email] RESEND_API_KEY not configured. Contact saved to file only.`)
+            return { messageId: 'logged-only', error: 'Resend API key not configured' }
+        }
+
+        const resend = new Resend(resendApiKey)
+
+        const emailPromise = resend.emails.send({
+            from: `Lumra AI <${fromEmail}>`,
+            to: [toEmail],
+            replyTo: email,
+            subject: `📧 New Contact Form Submission - ${email}`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <h2 style="color: #333; border-bottom: 2px solid #6366f1; padding-bottom: 10px;">New Contact Form Submission</h2>
+                    <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                        <p style="margin: 10px 0;"><strong>From:</strong> <a href="mailto:${email}">${email}</a></p>
+                        <p style="margin: 10px 0;"><strong>Submitted At:</strong> ${new Date().toLocaleString()}</p>
+                        <p style="margin: 10px 0;"><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+                    </div>
+                    <div style="background: #ffffff; padding: 20px; border-radius: 8px; border: 1px solid #ddd; margin: 20px 0;">
+                        <h3 style="color: #333; margin-top: 0;">Message:</h3>
+                        <p style="color: #666; white-space: pre-wrap; line-height: 1.6;">${message.replace(/\n/g, '<br>')}</p>
+                    </div>
+                    <p style="color: #999; font-size: 12px; margin-top: 30px;">This is an automated notification from Lumra AI contact form.</p>
+                </div>
+            `,
+            text: `
+New Contact Form Submission
+
+From: ${email}
+Submitted At: ${new Date().toLocaleString()}
+Timestamp: ${new Date().toISOString()}
+
+Message:
+${message}
+            `
+        })
+
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Resend API timeout')), 10000)
+        )
+
+        const info = await Promise.race([emailPromise, timeoutPromise])
+        log(`[Contact Email] ✅ Email sent successfully via Resend! Message ID: ${info.data?.id || 'unknown'}`)
+        return info
+    } catch (error) {
+        log(`[Contact Email] ❌ Error sending email: ${error.message}`, "error")
+        return { messageId: 'failed', error: error.message }
+    }
+}
+
 const app = express()
 const port = Number(process.env.PORT) || 5050
 
@@ -8770,6 +8829,11 @@ app.post("/api/contact", apiLimiter, async (req, res) => {
 
         log(`[Contact] New contact form submission from: ${email}`)
 
+        // Send email notification (non-blocking)
+        sendContactEmailNotification(email, message).catch(err => {
+            log(`[Contact] Email notification failed: ${err.message}`, "error")
+        })
+
         res.json({
             success: true,
             message: "Thank you for your message! We'll get back to you soon."
@@ -8782,6 +8846,131 @@ app.post("/api/contact", apiLimiter, async (req, res) => {
         })
     }
 })
+
+// Newsletter subscription endpoint
+app.post("/api/newsletter/subscribe", apiLimiter, async (req, res) => {
+    try {
+        const { email } = req.body
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                error: "Email is required"
+            })
+        }
+
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({
+                success: false,
+                error: "Invalid email format"
+            })
+        }
+
+        // Save newsletter subscription to file
+        const NEWSLETTER_FILE = join(__dirname, "newsletter_subscribers.json")
+        let subscribers = []
+        
+        if (existsSync(NEWSLETTER_FILE)) {
+            try {
+                const data = readFileSync(NEWSLETTER_FILE, "utf-8")
+                subscribers = JSON.parse(data)
+            } catch (error) {
+                log(`[Newsletter] Error loading subscribers: ${error.message}`, "error")
+            }
+        }
+
+        // Check if email already exists
+        const existingSubscriber = subscribers.find((sub: any) => sub.email.toLowerCase() === email.toLowerCase())
+        if (existingSubscriber) {
+            return res.json({
+                success: true,
+                message: "You're already subscribed! Thank you for your interest.",
+                alreadySubscribed: true
+            })
+        }
+
+        const subscriberEntry = {
+            id: `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            email: email.toLowerCase(),
+            subscribedAt: new Date().toISOString(),
+            active: true
+        }
+
+        subscribers.push(subscriberEntry)
+        writeFileSync(NEWSLETTER_FILE, JSON.stringify(subscribers, null, 2), "utf-8")
+
+        log(`[Newsletter] New subscription from: ${email}`)
+
+        // Send email notification (non-blocking)
+        sendNewsletterSubscriptionNotification(email).catch(err => {
+            log(`[Newsletter] Email notification failed: ${err.message}`, "error")
+        })
+
+        res.json({
+            success: true,
+            message: "Thank you for subscribing! You'll receive updates soon."
+        })
+    } catch (error) {
+        log(`[Newsletter] Error processing subscription: ${error.message}`, "error")
+        res.status(500).json({
+            success: false,
+            error: "Failed to subscribe. Please try again."
+        })
+    }
+})
+
+// Email notification for newsletter subscriptions
+async function sendNewsletterSubscriptionNotification(email) {
+    try {
+        const resendApiKey = process.env.RESEND_API_KEY
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
+        const toEmail = process.env.RESEND_TO_EMAIL || 'darshvekaria1@gmail.com'
+
+        if (!resendApiKey) {
+            log(`[Newsletter Email] RESEND_API_KEY not configured. Subscription saved to file only.`)
+            return { messageId: 'logged-only', error: 'Resend API key not configured' }
+        }
+
+        const resend = new Resend(resendApiKey)
+
+        const emailPromise = resend.emails.send({
+            from: `Lumra AI <${fromEmail}>`,
+            to: [toEmail],
+            subject: `📬 New Newsletter Subscription - ${email}`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <h2 style="color: #333; border-bottom: 2px solid #6366f1; padding-bottom: 10px;">New Newsletter Subscription</h2>
+                    <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                        <p style="margin: 10px 0;"><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
+                        <p style="margin: 10px 0;"><strong>Subscribed At:</strong> ${new Date().toLocaleString()}</p>
+                        <p style="margin: 10px 0;"><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+                    </div>
+                    <p style="color: #999; font-size: 12px; margin-top: 30px;">This is an automated notification from Lumra AI newsletter subscription.</p>
+                </div>
+            `,
+            text: `
+New Newsletter Subscription
+
+Email: ${email}
+Subscribed At: ${new Date().toLocaleString()}
+Timestamp: ${new Date().toISOString()}
+            `
+        })
+
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Resend API timeout')), 10000)
+        )
+
+        const info = await Promise.race([emailPromise, timeoutPromise])
+        log(`[Newsletter Email] ✅ Email sent successfully via Resend! Message ID: ${info.data?.id || 'unknown'}`)
+        return info
+    } catch (error) {
+        log(`[Newsletter Email] ❌ Error sending email: ${error.message}`, "error")
+        return { messageId: 'failed', error: error.message }
+    }
+}
 
 // Demo key validation endpoint
 // Demo key request endpoint
