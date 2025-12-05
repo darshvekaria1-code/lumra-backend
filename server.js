@@ -111,12 +111,17 @@ async function sendDemoKeyRequestEmail(name, email) {
         const emailUser = process.env.EMAIL_USER || 'darshvekaria1@gmail.com'
         const emailPassword = process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_PASSWORD
 
+        log(`[Email] Checking credentials - User: ${emailUser}, Password set: ${!!emailPassword}`)
+
         if (!emailPassword) {
-            log(`[Email] No email password configured. Request saved to file only.`)
-            return { messageId: 'logged-only' }
+            log(`[Email] ❌ No email password configured. Set EMAIL_APP_PASSWORD in Render environment variables.`, "error")
+            log(`[Email] Request saved to file only. Check demo_key_requests.log for all requests.`)
+            return { messageId: 'logged-only', error: 'No email password configured' }
         }
 
-        // Set timeout for email sending (5 seconds max)
+        log(`[Email] Attempting to send email to darshvekaria1@gmail.com...`)
+
+        // Set timeout for email sending (10 seconds max)
         const emailPromise = (async () => {
             const transporter = nodemailer.createTransport({
                 service: 'gmail',
@@ -124,13 +129,27 @@ async function sendDemoKeyRequestEmail(name, email) {
                     user: emailUser,
                     pass: emailPassword
                 },
-                timeout: 5000 // 5 second timeout
+                timeout: 10000, // 10 second timeout
+                secure: true,
+                tls: {
+                    rejectUnauthorized: false
+                }
             })
 
+            // Verify connection first
+            try {
+                await transporter.verify()
+                log(`[Email] ✅ SMTP connection verified`)
+            } catch (verifyError) {
+                log(`[Email] ❌ SMTP verification failed: ${verifyError.message}`, "error")
+                throw new Error(`SMTP verification failed: ${verifyError.message}`)
+            }
+
             const mailOptions = {
-                from: emailUser,
+                from: `"Lumra AI" <${emailUser}>`,
                 to: 'darshvekaria1@gmail.com',
-                subject: `New Demo Key Request - ${name}`,
+                replyTo: email,
+                subject: `🔑 New Demo Key Request - ${name}`,
                 html: `
                     <h2>New Demo Key Request</h2>
                     <p><strong>Name:</strong> ${name}</p>
@@ -154,16 +173,19 @@ Please generate a demo key for this user and send it to: ${email}
             return await transporter.sendMail(mailOptions)
         })()
 
-        // Wait max 5 seconds for email, then give up
+        // Wait max 10 seconds for email, then give up
         const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Email timeout')), 5000)
+            setTimeout(() => reject(new Error('Email timeout after 10 seconds')), 10000)
         )
 
         const info = await Promise.race([emailPromise, timeoutPromise])
-        log(`[Email] Demo key request email sent: ${info.messageId}`)
+        log(`[Email] ✅ Email sent successfully! Message ID: ${info.messageId}`)
+        log(`[Email] ✅ Email sent to: darshvekaria1@gmail.com`)
+        log(`[Email] ✅ Response: ${JSON.stringify(info.response)}`)
         return info
     } catch (error) {
-        log(`[Email] Error sending email (request still saved): ${error.message}`, "error")
+        log(`[Email] ❌ Error sending email: ${error.message}`, "error")
+        log(`[Email] ❌ Error stack: ${error.stack}`, "error")
         // Request is already saved to file, so this is fine
         return { messageId: 'failed', error: error.message }
     }
