@@ -194,6 +194,9 @@ Please generate a demo key for this user and send it to: ${email}
 const app = express()
 const port = Number(process.env.PORT) || 5050
 
+// Trust proxy - required for Render and other reverse proxy services
+app.set('trust proxy', true)
+
 const allowedOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean)
     : ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:5174"]
