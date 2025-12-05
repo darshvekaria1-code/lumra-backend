@@ -8621,6 +8621,220 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: "Unexpected server error", message: err.message })
 })
 
+// Demo Keys Storage File
+const DEMO_KEYS_FILE = join(__dirname, "demo_keys.json")
+
+function loadDemoKeys() {
+    if (existsSync(DEMO_KEYS_FILE)) {
+        try {
+            const data = readFileSync(DEMO_KEYS_FILE, "utf-8")
+            return JSON.parse(data)
+        } catch (error) {
+            log(`[Demo Keys] Error loading demo keys: ${error.message}`, "error")
+            return { keys: [] }
+        }
+    }
+    return { keys: [] }
+}
+
+function saveDemoKeys(data) {
+    try {
+        writeFileSync(DEMO_KEYS_FILE, JSON.stringify(data, null, 2), "utf-8")
+        return true
+    } catch (error) {
+        log(`[Demo Keys] Error saving demo keys: ${error.message}`, "error")
+        return false
+    }
+}
+
+// Contact form endpoint
+app.post("/api/contact", apiLimiter, async (req, res) => {
+    try {
+        const { email, message } = req.body
+
+        if (!email || !message) {
+            return res.status(400).json({
+                success: false,
+                error: "Email and message are required"
+            })
+        }
+
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({
+                success: false,
+                error: "Invalid email format"
+            })
+        }
+
+        // Save contact message to file
+        const CONTACTS_FILE = join(__dirname, "contacts.json")
+        let contacts = []
+        
+        if (existsSync(CONTACTS_FILE)) {
+            try {
+                const data = readFileSync(CONTACTS_FILE, "utf-8")
+                contacts = JSON.parse(data)
+            } catch (error) {
+                log(`[Contact] Error loading contacts: ${error.message}`, "error")
+            }
+        }
+
+        const contactEntry = {
+            id: `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            email,
+            message,
+            timestamp: new Date().toISOString(),
+            read: false
+        }
+
+        contacts.push(contactEntry)
+        writeFileSync(CONTACTS_FILE, JSON.stringify(contacts, null, 2), "utf-8")
+
+        log(`[Contact] New contact form submission from: ${email}`)
+
+        res.json({
+            success: true,
+            message: "Thank you for your message! We'll get back to you soon."
+        })
+    } catch (error) {
+        log(`[Contact] Error processing contact form: ${error.message}`, "error")
+        res.status(500).json({
+            success: false,
+            error: "Failed to send message. Please try again."
+        })
+    }
+})
+
+// Demo key validation endpoint
+app.post("/api/demo/validate", apiLimiter, async (req, res) => {
+    try {
+        const { key } = req.body
+
+        if (!key || typeof key !== "string") {
+            return res.status(400).json({
+                valid: false,
+                message: "Demo key is required"
+            })
+        }
+
+        const demoKeysData = loadDemoKeys()
+        const trimmedKey = key.trim()
+
+        // Check if key exists and is active
+        const validKey = demoKeysData.keys.find(
+            k => k.key === trimmedKey && k.active === true
+        )
+
+        if (validKey) {
+            // Update last used timestamp
+            validKey.lastUsed = new Date().toISOString()
+            validKey.usageCount = (validKey.usageCount || 0) + 1
+            saveDemoKeys(demoKeysData)
+
+            log(`[Demo Key] Valid key used: ${trimmedKey.substring(0, 8)}...`)
+
+            return res.json({
+                valid: true,
+                message: "Demo key is valid"
+            })
+        }
+
+        log(`[Demo Key] Invalid key attempted: ${trimmedKey.substring(0, 8)}...`)
+
+        res.json({
+            valid: false,
+            message: "Invalid demo key. Please check and try again."
+        })
+    } catch (error) {
+        log(`[Demo Key] Error validating demo key: ${error.message}`, "error")
+        res.status(500).json({
+            valid: false,
+            message: "Error validating key. Please try again."
+        })
+    }
+})
+
+// Generate demo key endpoint (for admin/developer)
+app.post("/api/demo/generate", requireDeveloperAuth, async (req, res) => {
+    try {
+        const { name, email, expiresInDays } = req.body
+
+        // Generate a secure demo key
+        const generateKey = () => {
+            const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // Removed confusing chars
+            let key = "DEMO-"
+            for (let i = 0; i < 12; i++) {
+                key += chars.charAt(Math.floor(Math.random() * chars.length))
+            }
+            return key
+        }
+
+        const newKey = generateKey()
+        const expiresAt = expiresInDays 
+            ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString()
+            : null
+
+        const demoKeysData = loadDemoKeys()
+        
+        const keyEntry = {
+            key: newKey,
+            name: name || "Unnamed",
+            email: email || null,
+            createdAt: new Date().toISOString(),
+            expiresAt,
+            active: true,
+            usageCount: 0,
+            lastUsed: null
+        }
+
+        demoKeysData.keys.push(keyEntry)
+        saveDemoKeys(demoKeysData)
+
+        log(`[Demo Key] New demo key generated: ${newKey.substring(0, 8)}...`)
+
+        res.json({
+            success: true,
+            key: newKey,
+            expiresAt,
+            message: "Demo key generated successfully"
+        })
+    } catch (error) {
+        log(`[Demo Key] Error generating demo key: ${error.message}`, "error")
+        res.status(500).json({
+            success: false,
+            error: "Failed to generate demo key"
+        })
+    }
+})
+
+// Get all demo keys (for admin)
+app.get("/api/demo/keys", requireDeveloperAuth, async (req, res) => {
+    try {
+        const demoKeysData = loadDemoKeys()
+        res.json({
+            success: true,
+            keys: demoKeysData.keys.map(k => ({
+                key: k.key,
+                name: k.name,
+                email: k.email,
+                createdAt: k.createdAt,
+                expiresAt: k.expiresAt,
+                active: k.active,
+                usageCount: k.usageCount,
+                lastUsed: k.lastUsed
+            }))
+        })
+    } catch (error) {
+        log(`[Demo Key] Error fetching demo keys: ${error.message}`, "error")
+        res.status(500).json({
+            success: false,
+            error: "Failed to fetch demo keys"
+        })
+    }
+})
+
 app.listen(port, () => {
     const startupMessage = `
 ╔═══════════════════════════════════════════════════════════╗

@@ -1,0 +1,24 @@
+{
+  "keys": [
+    {
+      "key": "DEMO-PQG5JSM4BYA9",
+      "name": "Test User",
+      "email": "test@example.com",
+      "createdAt": "2025-12-05T06:08:33.652Z",
+      "expiresAt": "2026-01-04T06:08:33.651Z",
+      "active": true,
+      "usageCount": 0,
+      "lastUsed": null
+    },
+    {
+      "key": "DEMO-JW924RK3CWQQ",
+      "name": "Test User",
+      "email": "test@example.com",
+      "createdAt": "2025-12-05T06:09:34.108Z",
+      "expiresAt": "2026-01-04T06:09:34.106Z",
+      "active": true,
+      "usageCount": 0,
+      "lastUsed": null
+    }
+  ]
+}
