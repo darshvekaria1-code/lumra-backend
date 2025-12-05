@@ -8708,6 +8708,70 @@ app.post("/api/contact", apiLimiter, async (req, res) => {
 })
 
 // Demo key validation endpoint
+// Demo key request endpoint
+app.post("/api/demo/request", apiLimiter, async (req, res) => {
+    try {
+        const { name, email } = req.body
+
+        if (!name || !email || typeof name !== "string" || typeof email !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Name and email are required"
+            })
+        }
+
+        // Basic email validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        if (!emailRegex.test(email.trim())) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid email address"
+            })
+        }
+
+        const trimmedName = name.trim()
+        const trimmedEmail = email.trim()
+
+        // Save demo key request to file (similar to contact form)
+        const DEMO_REQUESTS_FILE = join(__dirname, "demo_requests.json")
+        let requests = []
+        
+        if (existsSync(DEMO_REQUESTS_FILE)) {
+            try {
+                const data = readFileSync(DEMO_REQUESTS_FILE, "utf-8")
+                requests = JSON.parse(data)
+            } catch (error) {
+                log(`[Demo Key Request] Error loading requests: ${error.message}`, "error")
+            }
+        }
+
+        const requestEntry = {
+            id: `demo_request_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            name: trimmedName,
+            email: trimmedEmail,
+            timestamp: new Date().toISOString(),
+            status: "pending",
+            keyGenerated: false
+        }
+
+        requests.push(requestEntry)
+        writeFileSync(DEMO_REQUESTS_FILE, JSON.stringify(requests, null, 2), "utf-8")
+
+        log(`[Demo Key Request] New request from: ${trimmedName} (${trimmedEmail})`)
+
+        return res.json({
+            success: true,
+            message: "Demo key request submitted successfully. We'll send you a key soon!"
+        })
+    } catch (error) {
+        log(`[Demo Key Request] Error processing request: ${error.message}`, "error")
+        res.status(500).json({
+            success: false,
+            message: "Error processing request. Please try again."
+        })
+    }
+})
+
 app.post("/api/demo/validate", apiLimiter, async (req, res) => {
     try {
         const { key } = req.body
