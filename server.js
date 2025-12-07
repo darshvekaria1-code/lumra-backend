@@ -415,14 +415,40 @@ app.use(
     })
 )
 
+// Founder credentials (from environment variables or defaults)
+const FOUNDER_CREDENTIALS = {
+    darsh: {
+        username: process.env.DARSH_USERNAME || "darsh",
+        password: process.env.DARSH_PASSWORD || "Darsh9900",
+        name: "Darsh Vekaria",
+        email: "darshvekaria1@gmail.com"
+    },
+    siddhant: {
+        username: process.env.SIDDHANT_USERNAME || "siddhant",
+        password: process.env.SIDDHANT_PASSWORD || "siddhant12221",
+        name: "Siddhant Sathe",
+        email: "siddhant@lumra.ai"
+    }
+}
+
 // Developer authentication middleware
 function requireDeveloperAuth(req, res, next) {
-    if (req.session && req.session.developerAuthenticated) {
+    if (req.session && (req.session.developerAuthenticated || req.session.founderAuthenticated)) {
         return next()
     }
     // Redirect to login if not authenticated, preserving the intended destination
     const returnUrl = req.originalUrl !== '/login' ? `?returnUrl=${encodeURIComponent(req.originalUrl)}` : ''
     res.redirect(`/login${returnUrl}`)
+}
+
+// Founder authentication middleware
+function requireFounderAuth(req, res, next) {
+    if (req.session && req.session.founderAuthenticated) {
+        return next()
+    }
+    // Redirect to founders login if not authenticated
+    const returnUrl = req.originalUrl !== '/founders-login' ? `?returnUrl=${encodeURIComponent(req.originalUrl)}` : ''
+    res.redirect(`/founders-login${returnUrl}`)
 }
 
 // Developer login page
@@ -664,6 +690,10 @@ app.get("/login", (req, res) => {
             <button type="submit" class="submit-btn">⚠️ Sign In to Backend</button>
         </form>
         
+        <div style="margin-top: 20px; text-align: center;">
+            <a href="/founders-login" style="color: #94a3b8; text-decoration: none; font-size: 0.9rem;">Founders Login →</a>
+        </div>
+        
         <div class="info">
             <strong>🔒 RESTRICTED AREA</strong><br>
             Access to: Status Dashboard, Analytics & System Logs<br>
@@ -676,6 +706,297 @@ app.get("/login", (req, res) => {
 })
 
 // Developer login handler
+// Founders login page (selection page)
+app.get("/founders-login", (req, res) => {
+    if (req.session && req.session.founderAuthenticated) {
+        const returnUrl = req.query.returnUrl || '/'
+        return res.redirect(returnUrl)
+    }
+    
+    const error = req.query.error || ''
+    const returnUrl = req.query.returnUrl || '/'
+    
+    res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Founders Login - Lumra</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: #1e293b;
+            border: 2px solid #6366f1;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 0 30px rgba(99, 102, 241, 0.3);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        .logo {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #94a3b8;
+            margin-bottom: 30px;
+        }
+        .error {
+            background: #ef4444;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: ${error ? 'block' : 'none'};
+        }
+        .founder-options {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .founder-btn {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            border: none;
+            padding: 20px 30px;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: block;
+        }
+        .founder-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);
+        }
+        .founder-btn:active {
+            transform: translateY(0);
+        }
+        .back-link {
+            margin-top: 20px;
+            color: #94a3b8;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .back-link:hover {
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">Lumra</div>
+        <div class="subtitle">Founders Login</div>
+        ${error ? `<div class="error">${error}</div>` : ''}
+        <div class="founder-options">
+            <a href="/founders-login/darsh${returnUrl ? '?returnUrl=' + encodeURIComponent(returnUrl) : ''}" class="founder-btn">
+                Login with Darsh
+            </a>
+            <a href="/founders-login/siddhant${returnUrl ? '?returnUrl=' + encodeURIComponent(returnUrl) : ''}" class="founder-btn">
+                Login with Siddhant
+            </a>
+        </div>
+        <a href="/login" class="back-link">← Back to Developer Login</a>
+    </div>
+</body>
+</html>
+    `)
+})
+
+// Individual founder login pages
+app.get("/founders-login/:founder", (req, res) => {
+    const founder = req.params.founder.toLowerCase()
+    const returnUrl = req.query.returnUrl || '/'
+    
+    if (founder !== 'darsh' && founder !== 'siddhant') {
+        return res.redirect('/founders-login')
+    }
+    
+    if (req.session && req.session.founderAuthenticated && req.session.founderType === founder) {
+        return res.redirect(returnUrl)
+    }
+    
+    const error = req.query.error || ''
+    const founderInfo = FOUNDER_CREDENTIALS[founder]
+    
+    res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${founderInfo.name} Login - Lumra</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: #1e293b;
+            border: 2px solid #6366f1;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 0 30px rgba(99, 102, 241, 0.3);
+            max-width: 450px;
+            width: 100%;
+        }
+        .logo {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #fff;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #94a3b8;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .error {
+            background: #ef4444;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: ${error ? 'block' : 'none'};
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            color: #e2e8f0;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 1rem;
+        }
+        input:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);
+        }
+        .back-link {
+            margin-top: 20px;
+            text-align: center;
+        }
+        .back-link a {
+            color: #94a3b8;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .back-link a:hover {
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">Lumra</div>
+        <div class="subtitle">${founderInfo.name} Login</div>
+        ${error ? `<div class="error">${error}</div>` : ''}
+        <form method="POST" action="/founders-login/${founder}">
+            <input type="hidden" name="returnUrl" value="${returnUrl}">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autofocus placeholder="Enter username">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required placeholder="Enter password">
+            </div>
+            <button type="submit" class="btn">Login</button>
+        </form>
+        <div class="back-link">
+            <a href="/founders-login">← Back to Founders Selection</a>
+        </div>
+    </div>
+</body>
+</html>
+    `)
+})
+
+// Founder login POST handler
+app.post("/founders-login/:founder", (req, res) => {
+    const founder = req.params.founder.toLowerCase()
+    const { username, password, returnUrl } = req.body
+    
+    if (founder !== 'darsh' && founder !== 'siddhant') {
+        return res.redirect('/founders-login?error=Invalid founder')
+    }
+    
+    const founderInfo = FOUNDER_CREDENTIALS[founder]
+    const trimmedUsername = (username || '').trim()
+    const trimmedPassword = (password || '').trim()
+    
+    if (!trimmedUsername || !trimmedPassword) {
+        const error = encodeURIComponent("Username and password are required")
+        return res.redirect(`/founders-login/${founder}?error=${error}${returnUrl ? '&returnUrl=' + encodeURIComponent(returnUrl) : ''}`)
+    }
+    
+    if (trimmedUsername === founderInfo.username && trimmedPassword === founderInfo.password) {
+        req.session.founderAuthenticated = true
+        req.session.founderType = founder
+        req.session.founderName = founderInfo.name
+        req.session.founderEmail = founderInfo.email
+        req.session.developerAuthenticated = true // Also allow access to developer routes
+        req.session.developerUsername = founderInfo.name
+        
+        log(`[Founder Login] ✅ ${founderInfo.name} logged in successfully`)
+        
+        const redirectUrl = returnUrl || '/'
+        return res.redirect(redirectUrl)
+    } else {
+        log(`[Founder Login] ❌ Failed login attempt for ${founder} (username: ${trimmedUsername})`)
+        const error = encodeURIComponent("Invalid username or password")
+        return res.redirect(`/founders-login/${founder}?error=${error}${returnUrl ? '&returnUrl=' + encodeURIComponent(returnUrl) : ''}`)
+    }
+})
+
 app.post("/login", (req, res) => {
     const { username, password, returnUrl } = req.body || {}
     
@@ -708,8 +1029,11 @@ app.post("/login", (req, res) => {
     }
 })
 
-// Developer logout with cookie clearing
+// Developer/Founder logout with cookie clearing
 app.get("/logout", (req, res) => {
+    const wasFounder = req.session && req.session.founderAuthenticated
+    const founderName = req.session && req.session.founderName
+    
     // Clear all authentication cookies
     res.clearCookie('lumra_token', {
         httpOnly: true,
@@ -726,6 +1050,9 @@ app.get("/logout", (req, res) => {
     
     // Destroy session
     req.session.destroy((err) => {
+        if (wasFounder) {
+            log(`[Founder Logout] ${founderName || 'Founder'} logged out`)
+        }
         if (err) {
             console.error("Error destroying session:", err)
         }
@@ -2100,8 +2427,8 @@ app.get("/", requireDeveloperAuth, (req, res) => {
     const profileCount = userProfiles.size
     const isOpenAIReady = Boolean(openAiKey)
     const isAnthropicReady = Boolean(anthropicKey)
-    const developerUsername = req.session.developerUsername || 'Admin User'
-    const developerEmail = req.session.developerEmail || 'admin@edu.com'
+    const developerUsername = req.session.founderName || req.session.developerUsername || 'Admin User'
+    const developerEmail = req.session.founderEmail || req.session.developerEmail || 'admin@edu.com'
     const maintenance = loadMaintenanceMode()
     const analytics = loadAnalytics()
     
