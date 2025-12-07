@@ -2599,14 +2599,14 @@ app.get("/", requireDeveloperAuth, (req, res) => {
                 </li>
                 <li class="sidebar-menu-item">
                     <a href="/analytics" class="sidebar-menu-button">
-                        <span class="sidebar-menu-icon">🤖</span>
-                        <span>AI Analytics</span>
+                        <span class="sidebar-menu-icon">📈</span>
+                        <span>Analytics</span>
                     </a>
                 </li>
                 <li class="sidebar-menu-item">
-                    <a href="#" class="sidebar-menu-button">
-                        <span class="sidebar-menu-icon">📈</span>
-                        <span>Analytics</span>
+                    <a href="/analytics/ai" class="sidebar-menu-button">
+                        <span class="sidebar-menu-icon">🤖</span>
+                        <span>AI Analytics</span>
                     </a>
                 </li>
                 <li class="sidebar-menu-item">
@@ -3105,7 +3105,553 @@ app.get("/api/maintenance/status", requireDeveloperAuth, (req, res) => {
     }
 })
 
+// General Analytics page (visitors, demo keys, etc.)
 app.get("/analytics", requireDeveloperAuth, (req, res) => {
+    try {
+        const analytics = loadAnalytics()
+        
+        // Get visitor stats
+        const visitorStats = analytics.visitors || {
+            totalVisitors: 0,
+            uniqueVisitors: 0,
+            totalPageViews: 0,
+            dailyStats: {},
+            lastVisitorDate: null
+        }
+        
+        // Get demo request stats
+        const demoRequestStats = analytics.demoRequests || {
+            totalRequests: 0,
+            pendingRequests: 0,
+            fulfilledRequests: 0,
+            dailyRequests: {},
+            lastRequestDate: null
+        }
+        
+        // Load actual demo requests to get accurate pending count
+        const DEMO_REQUESTS_FILE = join(__dirname, "demo_requests.json")
+        let actualPendingCount = demoRequestStats.pendingRequests || 0
+        if (existsSync(DEMO_REQUESTS_FILE)) {
+            try {
+                const requestsData = readFileSync(DEMO_REQUESTS_FILE, "utf-8")
+                const requests = JSON.parse(requestsData)
+                actualPendingCount = requests.filter(r => r.status === "pending" && !r.keyGenerated).length
+            } catch (error) {
+                // Use default if file read fails
+            }
+        }
+        
+        // Get last 7 days of visitor stats
+        const last7Days = []
+        const today = new Date()
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date(today)
+            date.setDate(date.getDate() - i)
+            const dateStr = date.toISOString().split('T')[0]
+            const dayStats = visitorStats.dailyStats[dateStr] || { visitors: 0, pageViews: 0 }
+            last7Days.push({
+                date: dateStr,
+                label: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+                visitors: dayStats.visitors || 0,
+                pageViews: dayStats.pageViews || 0
+            })
+        }
+        
+        // Get last 7 days of demo requests
+        const last7DaysDemo = []
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date(today)
+            date.setDate(date.getDate() - i)
+            const dateStr = date.toISOString().split('T')[0]
+            const dayRequests = demoRequestStats.dailyRequests[dateStr] || 0
+            last7DaysDemo.push({
+                date: dateStr,
+                label: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+                requests: dayRequests
+            })
+        }
+
+        res.send(`
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>Analytics - Lumra</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --font-size: 16px;
+            --background: oklch(0.145 0 0);
+            --foreground: oklch(0.985 0 0);
+            --card: oklch(0.145 0 0);
+            --card-foreground: oklch(0.985 0 0);
+            --primary: oklch(0.985 0 0);
+            --primary-foreground: oklch(0.205 0 0);
+            --secondary: oklch(0.269 0 0);
+            --secondary-foreground: oklch(0.985 0 0);
+            --muted: oklch(0.269 0 0);
+            --muted-foreground: oklch(0.708 0 0);
+            --accent: oklch(0.269 0 0);
+            --accent-foreground: oklch(0.985 0 0);
+            --border: oklch(0.269 0 0);
+            --radius: 0.625rem;
+            --sidebar: oklch(0.205 0 0);
+            --sidebar-foreground: oklch(0.985 0 0);
+            --sidebar-primary: oklch(0.488 0.243 264.376);
+            --sidebar-primary-foreground: oklch(0.985 0 0);
+            --sidebar-accent: oklch(0.269 0 0);
+            --sidebar-accent-foreground: oklch(0.985 0 0);
+            --sidebar-border: oklch(0.269 0 0);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--background);
+            color: var(--foreground);
+            min-height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 16rem;
+            background: var(--sidebar);
+            color: var(--sidebar-foreground);
+            border-right: 1px solid var(--sidebar-border);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            position: fixed;
+            left: 0;
+            top: 0;
+            z-index: 10;
+        }
+
+        .sidebar-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--sidebar-border);
+        }
+
+        .sidebar-logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--sidebar-foreground);
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem;
+        }
+
+        .sidebar-menu {
+            list-style: none;
+        }
+
+        .sidebar-menu-item {
+            margin-bottom: 0.25rem;
+        }
+
+        .sidebar-menu-button {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.625rem 0.75rem;
+            border-radius: calc(var(--radius) - 2px);
+            background: transparent;
+            border: none;
+            color: var(--sidebar-foreground);
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.875rem;
+            text-align: left;
+            text-decoration: none;
+        }
+
+        .sidebar-menu-button:hover {
+            background: var(--sidebar-accent);
+            color: var(--sidebar-accent-foreground);
+        }
+
+        .sidebar-menu-button.active {
+            background: var(--sidebar-primary);
+            color: var(--sidebar-primary-foreground);
+            font-weight: 500;
+        }
+
+        .main-content {
+            flex: 1;
+            margin-left: 16rem;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            background: linear-gradient(to bottom right, #000000, #0a0a0a, #000000);
+        }
+
+        .header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--background);
+        }
+
+        .header-title {
+            font-size: 1.875rem;
+            font-weight: 700;
+            color: var(--foreground);
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: calc(var(--radius) - 2px);
+            border: 1px solid var(--border);
+            background: var(--secondary);
+            color: var(--secondary-foreground);
+            cursor: pointer;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn:hover {
+            background: var(--accent);
+            color: var(--accent-foreground);
+        }
+
+        .content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+        }
+
+        .card {
+            background: var(--card);
+            color: var(--card-foreground);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .card-header {
+            display: flex;
+            flex-direction: column;
+            gap: 0.375rem;
+        }
+
+        .card-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--foreground);
+        }
+
+        .card-description {
+            font-size: 0.875rem;
+            color: var(--muted-foreground);
+        }
+
+        .grid {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+        .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+        .kpi-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .kpi-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .kpi-icon {
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: calc(var(--radius) - 2px);
+            background: var(--secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+
+        .kpi-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--foreground);
+            line-height: 1;
+        }
+
+        .kpi-label {
+            font-size: 0.875rem;
+            color: var(--muted-foreground);
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            .main-content {
+                margin-left: 0;
+            }
+            .grid-cols-2, .grid-cols-4 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo">Lumra</div>
+        </div>
+        <div class="sidebar-content">
+            <ul class="sidebar-menu">
+                <li class="sidebar-menu-item">
+                    <a href="/" class="sidebar-menu-button">
+                        <span>📊</span>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-item">
+                    <a href="/analytics" class="sidebar-menu-button active">
+                        <span>📈</span>
+                        <span>Analytics</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-item">
+                    <a href="/analytics/ai" class="sidebar-menu-button">
+                        <span>🤖</span>
+                        <span>AI Analytics</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-item">
+                    <a href="/users" class="sidebar-menu-button">
+                        <span>👥</span>
+                        <span>Users</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+        <div class="sidebar-footer" style="padding: 1rem; border-top: 1px solid var(--sidebar-border);">
+            <a href="/logout" class="btn" style="width: 100%; justify-content: center;">Logout</a>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header class="header">
+            <h1 class="header-title">Analytics</h1>
+            <div class="header-actions">
+                <button class="btn" onclick="refreshData()">🔄 Refresh</button>
+                <span id="last-updated" style="font-size: 0.875rem; color: var(--muted-foreground);"></span>
+            </div>
+        </header>
+
+        <div class="content">
+            <!-- KPI Cards -->
+            <div class="grid grid-cols-4" style="margin-bottom: 1.5rem;">
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">👥</div>
+                    </div>
+                    <div class="kpi-value" id="stat-visitors">${visitorStats.totalVisitors || 0}</div>
+                    <div class="kpi-label">Total Visitors</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">🔍</div>
+                    </div>
+                    <div class="kpi-value" id="stat-page-views">${visitorStats.totalPageViews || 0}</div>
+                    <div class="kpi-label">Page Views</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">🔑</div>
+                    </div>
+                    <div class="kpi-value" id="stat-demo-requests">${demoRequestStats.totalRequests || 0}</div>
+                    <div class="kpi-label">Demo Key Requests</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">⏳</div>
+                    </div>
+                    <div class="kpi-value" id="stat-pending">${actualPendingCount}</div>
+                    <div class="kpi-label">Pending Requests</div>
+                </div>
+            </div>
+
+            <!-- Charts Grid -->
+            <div class="grid grid-cols-2" style="margin-bottom: 1.5rem;">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Visitor Trends (Last 7 Days)</div>
+                        <div class="card-description">Daily visitors and page views</div>
+                    </div>
+                    <div class="card-content">
+                        <div class="chart-container">
+                            <canvas id="visitorChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Demo Key Requests (Last 7 Days)</div>
+                        <div class="card-description">Daily demo key requests</div>
+                    </div>
+                    <div class="card-content">
+                        <div class="chart-container">
+                            <canvas id="demoRequestChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        Chart.defaults.color = 'rgba(255, 255, 255, 0.8)';
+        Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
+        Chart.defaults.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+
+        const visitorData = ${JSON.stringify(last7Days)};
+        const demoRequestData = ${JSON.stringify(last7DaysDemo)};
+
+        // Visitor Chart
+        const visitorCtx = document.getElementById('visitorChart');
+        const visitorChart = new Chart(visitorCtx, {
+            type: 'line',
+            data: {
+                labels: visitorData.map(d => d.label),
+                datasets: [
+                    {
+                        label: 'Visitors',
+                        data: visitorData.map(d => d.visitors),
+                        borderColor: 'rgba(102, 126, 234, 1)',
+                        backgroundColor: 'rgba(102, 126, 234, 0.2)',
+                        tension: 0.4,
+                        fill: true
+                    },
+                    {
+                        label: 'Page Views',
+                        data: visitorData.map(d => d.pageViews),
+                        borderColor: 'rgba(16, 185, 129, 1)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                        tension: 0.4,
+                        fill: true
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                }
+            }
+        });
+
+        // Demo Request Chart
+        const demoCtx = document.getElementById('demoRequestChart');
+        const demoChart = new Chart(demoCtx, {
+            type: 'bar',
+            data: {
+                labels: demoRequestData.map(d => d.label),
+                datasets: [{
+                    label: 'Demo Key Requests',
+                    data: demoRequestData.map(d => d.requests),
+                    backgroundColor: 'rgba(139, 92, 246, 0.8)',
+                    borderColor: 'rgba(139, 92, 246, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                }
+            }
+        });
+
+        function refreshData() {
+            location.reload();
+        }
+
+        document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+    </script>
+</body>
+</html>
+        `)
+    } catch (error) {
+        log(`[Analytics] Error loading analytics page: ${error.message}`, "error")
+        res.status(500).send(`<h1>Error loading analytics</h1><p>${error.message}</p>`)
+    }
+})
+
+// AI Analytics page (separate from general analytics)
+app.get("/analytics/ai", requireDeveloperAuth, (req, res) => {
     try {
         const analytics = loadAnalytics()
         const avgResponseTime = analytics.responseTimes.length > 0
@@ -3495,7 +4041,13 @@ app.get("/analytics", requireDeveloperAuth, (req, res) => {
                     </a>
                 </li>
                 <li class="sidebar-menu-item">
-                    <a href="/analytics" class="sidebar-menu-button active">
+                    <a href="/analytics" class="sidebar-menu-button">
+                        <span class="sidebar-menu-icon">📈</span>
+                        <span>Analytics</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-item">
+                    <a href="/analytics/ai" class="sidebar-menu-button active">
                         <span class="sidebar-menu-icon">🤖</span>
                         <span>AI Analytics</span>
                     </a>
@@ -3530,38 +4082,6 @@ app.get("/analytics", requireDeveloperAuth, (req, res) => {
         </header>
 
         <div class="content">
-            <!-- KPI Cards -->
-            <div class="grid grid-cols-4" style="margin-bottom: 1.5rem;">
-                <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">👥</div>
-                    </div>
-                    <div class="kpi-value" id="stat-visitors">${visitorStats.totalVisitors || 0}</div>
-                    <div class="kpi-label">Total Visitors</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">🔍</div>
-                    </div>
-                    <div class="kpi-value" id="stat-page-views">${visitorStats.totalPageViews || 0}</div>
-                    <div class="kpi-label">Page Views</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">🔑</div>
-                    </div>
-                    <div class="kpi-value" id="stat-demo-requests">${demoRequestStats.totalRequests || 0}</div>
-                    <div class="kpi-label">Demo Key Requests</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">⏳</div>
-                    </div>
-                    <div class="kpi-value" id="stat-pending">${actualPendingCount}</div>
-                    <div class="kpi-label">Pending Requests</div>
-                </div>
-            </div>
-            
             <!-- AI Stats Row -->
             <div class="grid grid-cols-4" style="margin-bottom: 1.5rem;">
                 <div class="kpi-card">
@@ -3695,24 +4215,6 @@ app.get("/analytics", requireDeveloperAuth, (req, res) => {
                 const data = await response.json();
                 if (data.success && data.analytics) {
                     const analytics = data.analytics;
-                    
-                    // Update visitor stats
-                    const visitors = analytics.visitors || {};
-                    if (document.getElementById('stat-visitors')) {
-                        document.getElementById('stat-visitors').textContent = visitors.totalVisitors || 0;
-                    }
-                    if (document.getElementById('stat-page-views')) {
-                        document.getElementById('stat-page-views').textContent = visitors.totalPageViews || 0;
-                    }
-                    
-                    // Update demo request stats
-                    const demoRequests = analytics.demoRequests || {};
-                    if (document.getElementById('stat-demo-requests')) {
-                        document.getElementById('stat-demo-requests').textContent = demoRequests.totalRequests || 0;
-                    }
-                    if (document.getElementById('stat-pending')) {
-                        document.getElementById('stat-pending').textContent = demoRequests.pendingRequests || 0;
-                    }
                     
                     // Update AI stats
                     if (document.getElementById('stat-conversations')) {
