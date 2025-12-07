@@ -310,6 +310,38 @@ app.use(express.json({ limit: "10mb" }))
 app.use(express.urlencoded({ extended: true, limit: "10mb" }))
 app.use(express.urlencoded({ extended: true, limit: "1mb" })) // For form submissions
 
+// Visitor tracking middleware (track all page visits)
+app.use((req, res, next) => {
+    // Skip tracking for API endpoints, static files, and admin pages
+    const skipPaths = [
+        '/api/',
+        '/favicon.ico',
+        '/static/',
+        '/analytics',
+        '/users',
+        '/login',
+        '/logout',
+        '/health',
+        '/tunnel-test'
+    ]
+    
+    const shouldTrack = !skipPaths.some(path => req.path.startsWith(path))
+    
+    if (shouldTrack) {
+        // Track visitor asynchronously (don't block request)
+        setImmediate(() => {
+            try {
+                trackVisitor(req)
+            } catch (error) {
+                // Silently fail - don't break the request
+                log(`[Visitor Tracking] Error: ${error.message}`, "error")
+            }
+        })
+    }
+    
+    next()
+})
+
 // Input sanitization helper function
 function sanitizeInput(input) {
     if (typeof input !== 'string') return input
@@ -3083,6 +3115,37 @@ app.get("/analytics", requireDeveloperAuth, (req, res) => {
         const successRate = analytics.totalConversations > 0
             ? Math.round((analytics.fusedCalls / analytics.totalConversations) * 100)
             : 0
+        
+        // Get visitor stats
+        const visitorStats = analytics.visitors || {
+            totalVisitors: 0,
+            uniqueVisitors: 0,
+            totalPageViews: 0,
+            dailyStats: {},
+            lastVisitorDate: null
+        }
+        
+        // Get demo request stats
+        const demoRequestStats = analytics.demoRequests || {
+            totalRequests: 0,
+            pendingRequests: 0,
+            fulfilledRequests: 0,
+            dailyRequests: {},
+            lastRequestDate: null
+        }
+        
+        // Load actual demo requests to get accurate pending count
+        const DEMO_REQUESTS_FILE = join(__dirname, "demo_requests.json")
+        let actualPendingCount = demoRequestStats.pendingRequests || 0
+        if (existsSync(DEMO_REQUESTS_FILE)) {
+            try {
+                const requestsData = readFileSync(DEMO_REQUESTS_FILE, "utf-8")
+                const requests = JSON.parse(requestsData)
+                actualPendingCount = requests.filter(r => r.status === "pending" && !r.keyGenerated).length
+            } catch (error) {
+                // Use default if file read fails
+            }
+        }
 
         res.send(`
 <!DOCTYPE html>
@@ -3471,6 +3534,38 @@ app.get("/analytics", requireDeveloperAuth, (req, res) => {
             <div class="grid grid-cols-4" style="margin-bottom: 1.5rem;">
                 <div class="kpi-card">
                     <div class="kpi-header">
+                        <div class="kpi-icon">👥</div>
+                    </div>
+                    <div class="kpi-value" id="stat-visitors">${visitorStats.totalVisitors || 0}</div>
+                    <div class="kpi-label">Total Visitors</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">🔍</div>
+                    </div>
+                    <div class="kpi-value" id="stat-page-views">${visitorStats.totalPageViews || 0}</div>
+                    <div class="kpi-label">Page Views</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">🔑</div>
+                    </div>
+                    <div class="kpi-value" id="stat-demo-requests">${demoRequestStats.totalRequests || 0}</div>
+                    <div class="kpi-label">Demo Key Requests</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">⏳</div>
+                    </div>
+                    <div class="kpi-value" id="stat-pending">${actualPendingCount}</div>
+                    <div class="kpi-label">Pending Requests</div>
+                </div>
+            </div>
+            
+            <!-- AI Stats Row -->
+            <div class="grid grid-cols-4" style="margin-bottom: 1.5rem;">
+                <div class="kpi-card">
+                    <div class="kpi-header">
                         <div class="kpi-icon">💬</div>
                     </div>
                     <div class="kpi-value" id="stat-conversations">${analytics.totalConversations || 0}</div>
@@ -3600,11 +3695,39 @@ app.get("/analytics", requireDeveloperAuth, (req, res) => {
                 const data = await response.json();
                 if (data.success && data.analytics) {
                     const analytics = data.analytics;
-                    document.getElementById('stat-conversations').textContent = analytics.totalConversations || 0;
+                    
+                    // Update visitor stats
+                    const visitors = analytics.visitors || {};
+                    if (document.getElementById('stat-visitors')) {
+                        document.getElementById('stat-visitors').textContent = visitors.totalVisitors || 0;
+                    }
+                    if (document.getElementById('stat-page-views')) {
+                        document.getElementById('stat-page-views').textContent = visitors.totalPageViews || 0;
+                    }
+                    
+                    // Update demo request stats
+                    const demoRequests = analytics.demoRequests || {};
+                    if (document.getElementById('stat-demo-requests')) {
+                        document.getElementById('stat-demo-requests').textContent = demoRequests.totalRequests || 0;
+                    }
+                    if (document.getElementById('stat-pending')) {
+                        document.getElementById('stat-pending').textContent = demoRequests.pendingRequests || 0;
+                    }
+                    
+                    // Update AI stats
+                    if (document.getElementById('stat-conversations')) {
+                        document.getElementById('stat-conversations').textContent = analytics.totalConversations || 0;
+                    }
                     const avgRT = analytics.averageResponseTime || 0;
-                    document.getElementById('stat-response-time').textContent = (avgRT / 1000).toFixed(1) + 's';
-                    document.getElementById('stat-tokens').textContent = ((analytics.totalTokens || 0) / 1000).toFixed(1) + 'K';
-                    document.getElementById('stat-cost').textContent = '$' + (analytics.totalCost || 0).toFixed(2);
+                    if (document.getElementById('stat-response-time')) {
+                        document.getElementById('stat-response-time').textContent = (avgRT / 1000).toFixed(1) + 's';
+                    }
+                    if (document.getElementById('stat-tokens')) {
+                        document.getElementById('stat-tokens').textContent = ((analytics.totalTokens || 0) / 1000).toFixed(1) + 'K';
+                    }
+                    if (document.getElementById('stat-cost')) {
+                        document.getElementById('stat-cost').textContent = '$' + (analytics.totalCost || 0).toFixed(2);
+                    }
                 }
             } catch (error) {
                 console.error('Error updating stats:', error);
@@ -5880,7 +6003,32 @@ function loadAnalytics() {
     try {
         if (existsSync(ANALYTICS_FILE)) {
             const data = readFileSync(ANALYTICS_FILE, "utf-8")
-            return JSON.parse(data)
+            const analytics = JSON.parse(data)
+            // Ensure new fields exist for backward compatibility
+            if (!analytics.visitors) {
+                analytics.visitors = {
+                    totalVisitors: 0,
+                    uniqueVisitors: 0,
+                    totalPageViews: 0,
+                    dailyStats: {},
+                    visitorIPs: new Set(),
+                    lastVisitorDate: null
+                }
+            }
+            if (!analytics.demoRequests) {
+                analytics.demoRequests = {
+                    totalRequests: 0,
+                    pendingRequests: 0,
+                    fulfilledRequests: 0,
+                    dailyRequests: {},
+                    lastRequestDate: null
+                }
+            }
+            // Convert Set from JSON (if it was saved as array)
+            if (Array.isArray(analytics.visitors.visitorIPs)) {
+                analytics.visitors.visitorIPs = new Set(analytics.visitors.visitorIPs)
+            }
+            return analytics
         }
     } catch (error) {
         console.error("Error loading analytics:", error)
@@ -5902,6 +6050,21 @@ function loadAnalytics() {
         pageScans: 0,
         responseTimes: [],
         toneAdaptationRate: 0,
+        visitors: {
+            totalVisitors: 0,
+            uniqueVisitors: 0,
+            totalPageViews: 0,
+            dailyStats: {},
+            visitorIPs: new Set(),
+            lastVisitorDate: null
+        },
+        demoRequests: {
+            totalRequests: 0,
+            pendingRequests: 0,
+            fulfilledRequests: 0,
+            dailyRequests: {},
+            lastRequestDate: null
+        },
         lastUpdated: new Date().toISOString()
     }
 }
@@ -5972,9 +6135,173 @@ function updateAnalytics(metrics) {
         
         analytics.lastUpdated = new Date().toISOString()
         
-        writeFileSync(ANALYTICS_FILE, JSON.stringify(analytics, null, 2))
+        // Convert Set to Array for JSON serialization
+        const analyticsToSave = {
+            ...analytics,
+            visitors: {
+                ...analytics.visitors,
+                visitorIPs: Array.from(analytics.visitors.visitorIPs || [])
+            }
+        }
+        
+        writeFileSync(ANALYTICS_FILE, JSON.stringify(analyticsToSave, null, 2))
     } catch (error) {
         console.error("Error updating analytics:", error)
+    }
+}
+
+// Track visitor (called on each page visit)
+function trackVisitor(req) {
+    try {
+        const analytics = loadAnalytics()
+        const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+        
+        // Get visitor IP (handle proxy)
+        const visitorIP = req.ip || 
+                         req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
+                         req.connection?.remoteAddress || 
+                         'unknown'
+        
+        // Initialize visitors object if needed
+        if (!analytics.visitors) {
+            analytics.visitors = {
+                totalVisitors: 0,
+                uniqueVisitors: 0,
+                totalPageViews: 0,
+                dailyStats: {},
+                visitorIPs: new Set(),
+                lastVisitorDate: null
+            }
+        }
+        
+        // Convert Set from JSON if needed
+        if (Array.isArray(analytics.visitors.visitorIPs)) {
+            analytics.visitors.visitorIPs = new Set(analytics.visitors.visitorIPs)
+        } else if (!analytics.visitors.visitorIPs) {
+            analytics.visitors.visitorIPs = new Set()
+        }
+        
+        // Track page view
+        analytics.visitors.totalPageViews += 1
+        
+        // Track unique visitor
+        const isNewVisitor = !analytics.visitors.visitorIPs.has(visitorIP)
+        if (isNewVisitor) {
+            analytics.visitors.visitorIPs.add(visitorIP)
+            analytics.visitors.uniqueVisitors = analytics.visitors.visitorIPs.size
+            analytics.visitors.totalVisitors += 1
+        }
+        
+        // Update daily stats
+        if (!analytics.visitors.dailyStats[today]) {
+            analytics.visitors.dailyStats[today] = {
+                visitors: 0,
+                pageViews: 0,
+                uniqueVisitors: new Set()
+            }
+        }
+        
+        // Convert dailyStats uniqueVisitors from array to Set if needed
+        if (Array.isArray(analytics.visitors.dailyStats[today].uniqueVisitors)) {
+            analytics.visitors.dailyStats[today].uniqueVisitors = new Set(
+                analytics.visitors.dailyStats[today].uniqueVisitors
+            )
+        } else if (!(analytics.visitors.dailyStats[today].uniqueVisitors instanceof Set)) {
+            analytics.visitors.dailyStats[today].uniqueVisitors = new Set()
+        }
+        
+        analytics.visitors.dailyStats[today].pageViews += 1
+        if (isNewVisitor || !analytics.visitors.dailyStats[today].uniqueVisitors.has(visitorIP)) {
+            analytics.visitors.dailyStats[today].uniqueVisitors.add(visitorIP)
+            analytics.visitors.dailyStats[today].visitors = analytics.visitors.dailyStats[today].uniqueVisitors.size
+        }
+        
+        analytics.visitors.lastVisitorDate = new Date().toISOString()
+        analytics.lastUpdated = new Date().toISOString()
+        
+        // Convert Set to Array for JSON serialization
+        const dailyStatsToSave = {}
+        Object.keys(analytics.visitors.dailyStats).forEach(date => {
+            const daily = analytics.visitors.dailyStats[date]
+            dailyStatsToSave[date] = {
+                visitors: daily.visitors,
+                pageViews: daily.pageViews,
+                uniqueVisitors: Array.from(daily.uniqueVisitors || [])
+            }
+        })
+        
+        const analyticsToSave = {
+            ...analytics,
+            visitors: {
+                ...analytics.visitors,
+                visitorIPs: Array.from(analytics.visitors.visitorIPs),
+                dailyStats: dailyStatsToSave
+            }
+        }
+        
+        writeFileSync(ANALYTICS_FILE, JSON.stringify(analyticsToSave, null, 2))
+        
+        return {
+            totalVisitors: analytics.visitors.totalVisitors,
+            uniqueVisitors: analytics.visitors.uniqueVisitors,
+            totalPageViews: analytics.visitors.totalPageViews,
+            isNewVisitor
+        }
+    } catch (error) {
+        log(`[Visitor Tracking] Error tracking visitor: ${error.message}`, "error")
+        return null
+    }
+}
+
+// Track demo key request
+function trackDemoKeyRequest() {
+    try {
+        const analytics = loadAnalytics()
+        const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+        
+        // Initialize demoRequests object if needed
+        if (!analytics.demoRequests) {
+            analytics.demoRequests = {
+                totalRequests: 0,
+                pendingRequests: 0,
+                fulfilledRequests: 0,
+                dailyRequests: {},
+                lastRequestDate: null
+            }
+        }
+        
+        // Update counts
+        analytics.demoRequests.totalRequests += 1
+        analytics.demoRequests.pendingRequests += 1
+        
+        // Update daily stats
+        if (!analytics.demoRequests.dailyRequests[today]) {
+            analytics.demoRequests.dailyRequests[today] = 0
+        }
+        analytics.demoRequests.dailyRequests[today] += 1
+        
+        analytics.demoRequests.lastRequestDate = new Date().toISOString()
+        analytics.lastUpdated = new Date().toISOString()
+        
+        // Convert Set to Array for JSON serialization if needed
+        const analyticsToSave = {
+            ...analytics,
+            visitors: analytics.visitors ? {
+                ...analytics.visitors,
+                visitorIPs: Array.isArray(analytics.visitors.visitorIPs) 
+                    ? analytics.visitors.visitorIPs 
+                    : Array.from(analytics.visitors.visitorIPs || [])
+            } : undefined
+        }
+        
+        writeFileSync(ANALYTICS_FILE, JSON.stringify(analyticsToSave, null, 2))
+        
+        log(`[Analytics] Demo key request tracked. Total: ${analytics.demoRequests.totalRequests}`)
+        
+        return analytics.demoRequests
+    } catch (error) {
+        log(`[Demo Request Tracking] Error tracking demo request: ${error.message}`, "error")
+        return null
     }
 }
 
@@ -8203,15 +8530,39 @@ app.get("/api/analytics", authenticateToken, (req, res) => {
             ? Math.round((toneAdaptedCount / logs.length) * 100)
             : 0
         
+        // Ensure visitor and demo request data is properly formatted for JSON
+        const analyticsToReturn = {
+            ...analytics,
+            visitors: analytics.visitors ? {
+                ...analytics.visitors,
+                visitorIPs: Array.isArray(analytics.visitors.visitorIPs) 
+                    ? analytics.visitors.visitorIPs.length 
+                    : (analytics.visitors.visitorIPs instanceof Set 
+                        ? analytics.visitors.visitorIPs.size 
+                        : 0)
+            } : {
+                totalVisitors: 0,
+                uniqueVisitors: 0,
+                totalPageViews: 0,
+                dailyStats: {},
+                lastVisitorDate: null
+            },
+            demoRequests: analytics.demoRequests || {
+                totalRequests: 0,
+                pendingRequests: 0,
+                fulfilledRequests: 0,
+                dailyRequests: {},
+                lastRequestDate: null
+            },
+            successRate,
+            avgTokensPerRequest,
+            toneAdaptationPercentage,
+            totalLogs: logs.length,
+        }
+        
         res.json({
             success: true,
-            analytics: {
-                ...analytics,
-                successRate,
-                avgTokensPerRequest,
-                toneAdaptationPercentage,
-                totalLogs: logs.length,
-            },
+            analytics: analyticsToReturn,
             recentActivity: recentLogs.slice(-10).map(log => ({
                 id: log.id,
                 timestamp: log.timestamp,
@@ -9023,6 +9374,9 @@ app.post("/api/demo/request", apiLimiter, async (req, res) => {
         writeFileSync(DEMO_REQUESTS_FILE, JSON.stringify(requests, null, 2), "utf-8")
 
         log(`[Demo Key Request] New request from: ${trimmedName} (${trimmedEmail})`)
+
+        // Track in analytics
+        trackDemoKeyRequest()
 
         // Send email notification asynchronously (don't wait for it)
         // Also log to a simple text file for easy access
