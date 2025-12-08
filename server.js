@@ -9238,20 +9238,30 @@ function saveDemoKeyRevocation(data) {
 // Check if demo keys are currently valid (public endpoint)
 app.get("/api/demo/status", async (req, res) => {
     try {
+        // Add CORS headers to allow frontend access
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+        res.setHeader('Pragma', 'no-cache')
+        res.setHeader('Expires', '0')
+        
         const revocationStatus = loadDemoKeyRevocation()
-        res.json({
+        const status = {
             valid: !revocationStatus.revoked,
-            revoked: revocationStatus.revoked,
+            revoked: Boolean(revocationStatus.revoked), // Ensure boolean
             revokedAt: revocationStatus.revokedAt,
             message: revocationStatus.revoked 
                 ? "Demo keys have been revoked. Please contact support for access." 
                 : "Demo keys are currently valid"
-        })
+        }
+        
+        log(`[Demo Key Status] Status check: revoked=${status.revoked}, valid=${status.valid}`)
+        res.json(status)
     } catch (error) {
         log(`[Demo Key Status] Error checking status: ${error.message}`, "error")
         res.status(500).json({
             valid: false,
-            revoked: false,
+            revoked: true, // Fail closed - assume revoked on error
             error: "Failed to check demo key status"
         })
     }
