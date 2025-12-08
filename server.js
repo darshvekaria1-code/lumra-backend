@@ -9267,19 +9267,28 @@ app.post("/api/demo/revoke-all", requireDeveloperAuth, async (req, res) => {
             message: req.body.message || "All demo keys have been revoked by administrator"
         }
         
-        saveDemoKeyRevocation(revocationData)
+        const saved = saveDemoKeyRevocation(revocationData)
+        if (!saved) {
+            log(`[Demo Key Revocation] ⚠️ Warning: Failed to save revocation data`, "error")
+        }
+        
+        // Verify the revocation was saved
+        const verifyStatus = loadDemoKeyRevocation()
         log(`[Demo Key Revocation] ✅ All demo keys revoked by ${revocationData.revokedBy}`)
+        log(`[Demo Key Revocation] Verification: revoked=${verifyStatus.revoked}, revokedAt=${verifyStatus.revokedAt}`)
         
         res.json({
             success: true,
-            message: "All demo keys have been revoked. All demo key users will be logged out.",
-            revokedAt: revocationData.revokedAt
+            message: "All demo keys have been revoked. All demo key users will be logged out within 10 seconds.",
+            revokedAt: revocationData.revokedAt,
+            verified: verifyStatus.revoked
         })
     } catch (error) {
         log(`[Demo Key Revocation] Error revoking demo keys: ${error.message}`, "error")
+        log(`[Demo Key Revocation] Error stack: ${error.stack}`, "error")
         res.status(500).json({
             success: false,
-            error: "Failed to revoke demo keys"
+            error: "Failed to revoke demo keys: " + error.message
         })
     }
 })
