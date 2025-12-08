@@ -9105,9 +9105,9 @@ app.post("/api/demo/validate", apiLimiter, async (req, res) => {
 
         const trimmedKey = key.trim()
 
-        // Only accept the specific demo key: 11223344
-        if (trimmedKey === "11223344") {
-            log(`[Demo Key] Valid key used: 11223344`)
+        // Only accept the specific demo key: 112211
+        if (trimmedKey === "112211") {
+            log(`[Demo Key] Valid key used: 112211`)
 
             return res.json({
                 valid: true,
