@@ -9523,19 +9523,22 @@ app.get("/demo-keys", requireDeveloperAuth, async (req, res) => {
             try {
                 const response = await fetch('/api/demo/revoke-all', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
                 });
                 
                 const data = await response.json();
                 
                 if (data.success) {
-                    showMessage('✅ ' + data.message, 'success');
-                    setTimeout(() => location.reload(), 1500);
+                    showMessage('✅ ' + data.message + ' All users will be kicked out within 10 seconds.', 'success');
+                    // Reload after showing message
+                    setTimeout(() => location.reload(), 2000);
                 } else {
                     showMessage('❌ Error: ' + (data.error || 'Failed to revoke demo keys'), 'error');
                 }
             } catch (error) {
                 showMessage('❌ Error: ' + error.message, 'error');
+                console.error('Revoke error:', error);
             }
         }
 
