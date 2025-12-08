@@ -2572,6 +2572,12 @@ app.get("/", requireDeveloperAuth, (req, res) => {
                     </a>
                 </li>
                 <li class="sidebar-menu-item">
+                    <a href="/demo-keys" class="sidebar-menu-button">
+                        <span class="sidebar-menu-icon">🔑</span>
+                        <span>Demo Keys</span>
+                    </a>
+                </li>
+                <li class="sidebar-menu-item">
                     <a href="#" class="sidebar-menu-button">
                         <span class="sidebar-menu-icon">📈</span>
                         <span>Analytics</span>
@@ -9456,7 +9462,11 @@ app.get("/demo-keys", requireDeveloperAuth, async (req, res) => {
     <div class="container">
         <div class="header">
             <h1>🔑 Demo Key Management</h1>
-            <p>Manage demo key access and revocation</p>
+            <p>Manage demo key access and revocation on api.lumraedu.com</p>
+            <p style="margin-top: 10px; font-size: 0.9rem; color: #64748b;">
+                <strong>Domain:</strong> api.lumraedu.com | 
+                <strong>Status Endpoint:</strong> <a href="/api/demo/status" style="color: #6366f1; text-decoration: none;">/api/demo/status</a>
+            </p>
         </div>
 
         <div id="message" class="message"></div>
@@ -9466,15 +9476,18 @@ app.get("/demo-keys", requireDeveloperAuth, async (req, res) => {
             ${revocationStatus.revoked ? `
                 <div class="status-info">
                     <strong>Revoked At:</strong> ${revocationStatus.revokedAt ? new Date(revocationStatus.revokedAt).toLocaleString() : 'N/A'}<br>
-                    <strong>Revoked By:</strong> ${revocationStatus.revokedBy || 'N/A'}
+                    <strong>Revoked By:</strong> ${revocationStatus.revokedBy || 'N/A'}<br>
+                    <strong>Domain:</strong> api.lumraedu.com
                 </div>
                 <div class="warning-box">
                     <h3>⚠️ Warning</h3>
                     <p>All demo keys are currently revoked. Users with demo keys will be automatically logged out and redirected to the landing page.</p>
+                    <p style="margin-top: 10px;"><strong>What happens:</strong> When you revoke demo keys, all users currently using demo keys (stored in localStorage) will be kicked out within 30 seconds. The frontend checks the status every 30 seconds and automatically redirects revoked users.</p>
                 </div>
             ` : `
                 <div class="status-info">
                     <strong>Status:</strong> Demo keys are currently active and valid.<br>
+                    <strong>Domain:</strong> api.lumraedu.com<br>
                     Users can use demo keys to access the application.
                 </div>
             `}
