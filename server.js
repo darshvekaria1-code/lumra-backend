@@ -9227,10 +9227,17 @@ function loadDemoKeyRevocation() {
 
 function saveDemoKeyRevocation(data) {
     try {
-        writeFileSync(DEMO_KEY_REVOCATION_FILE, JSON.stringify(data, null, 2), "utf-8")
+        // Ensure revoked is explicitly a boolean
+        const dataToSave = {
+            ...data,
+            revoked: Boolean(data.revoked)
+        }
+        writeFileSync(DEMO_KEY_REVOCATION_FILE, JSON.stringify(dataToSave, null, 2), "utf-8")
+        log(`[Demo Key Revocation] ✅ Saved revocation status: revoked=${dataToSave.revoked}, file: ${DEMO_KEY_REVOCATION_FILE}`)
         return true
     } catch (error) {
         log(`[Demo Key Revocation] Error saving revocation status: ${error.message}`, "error")
+        log(`[Demo Key Revocation] Error stack: ${error.stack}`, "error")
         return false
     }
 }
@@ -9245,17 +9252,23 @@ app.get("/api/demo/status", async (req, res) => {
         res.setHeader('Pragma', 'no-cache')
         res.setHeader('Expires', '0')
         
+        // Load revocation status fresh from file
         const revocationStatus = loadDemoKeyRevocation()
+        
+        // Ensure we're reading the boolean correctly (handle string "true"/"false" or boolean)
+        const isRevoked = revocationStatus.revoked === true || revocationStatus.revoked === "true" || revocationStatus.revoked === 1
+        
         const status = {
-            valid: !revocationStatus.revoked,
-            revoked: Boolean(revocationStatus.revoked), // Ensure boolean
+            valid: !isRevoked,
+            revoked: isRevoked,
             revokedAt: revocationStatus.revokedAt,
-            message: revocationStatus.revoked 
+            revokedBy: revocationStatus.revokedBy,
+            message: isRevoked 
                 ? "Demo keys have been revoked. Please contact support for access." 
                 : "Demo keys are currently valid"
         }
         
-        log(`[Demo Key Status] Status check: revoked=${status.revoked}, valid=${status.valid}`)
+        log(`[Demo Key Status] Status check: revoked=${status.revoked} (raw: ${revocationStatus.revoked}), valid=${status.valid}, file exists: ${existsSync(DEMO_KEY_REVOCATION_FILE)}`)
         res.json(status)
     } catch (error) {
         log(`[Demo Key Status] Error checking status: ${error.message}`, "error")
@@ -9271,27 +9284,46 @@ app.get("/api/demo/status", async (req, res) => {
 app.post("/api/demo/revoke-all", requireDeveloperAuth, async (req, res) => {
     try {
         const revocationData = {
-            revoked: true,
+            revoked: true, // Explicitly set to boolean true
             revokedAt: new Date().toISOString(),
             revokedBy: req.session?.developerUsername || req.session?.developerEmail || "admin",
             message: req.body.message || "All demo keys have been revoked by administrator"
         }
         
+        log(`[Demo Key Revocation] Attempting to revoke demo keys...`)
+        log(`[Demo Key Revocation] Data to save:`, JSON.stringify(revocationData))
+        
         const saved = saveDemoKeyRevocation(revocationData)
         if (!saved) {
             log(`[Demo Key Revocation] ⚠️ Warning: Failed to save revocation data`, "error")
+            return res.status(500).json({
+                success: false,
+                error: "Failed to save revocation status"
+            })
         }
         
-        // Verify the revocation was saved
+        // Small delay to ensure file is written
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
+        // Verify the revocation was saved by reading the file directly
         const verifyStatus = loadDemoKeyRevocation()
+        const isActuallyRevoked = verifyStatus.revoked === true || verifyStatus.revoked === "true"
+        
         log(`[Demo Key Revocation] ✅ All demo keys revoked by ${revocationData.revokedBy}`)
-        log(`[Demo Key Revocation] Verification: revoked=${verifyStatus.revoked}, revokedAt=${verifyStatus.revokedAt}`)
+        log(`[Demo Key Revocation] Verification: revoked=${isActuallyRevoked} (raw: ${verifyStatus.revoked}), revokedAt=${verifyStatus.revokedAt}`)
+        log(`[Demo Key Revocation] File path: ${DEMO_KEY_REVOCATION_FILE}`)
+        log(`[Demo Key Revocation] File exists: ${existsSync(DEMO_KEY_REVOCATION_FILE)}`)
+        
+        if (!isActuallyRevoked) {
+            log(`[Demo Key Revocation] ⚠️ WARNING: Revocation status not properly saved!`, "error")
+        }
         
         res.json({
             success: true,
-            message: "All demo keys have been revoked. All demo key users will be logged out within 10 seconds.",
+            message: "All demo keys have been revoked. All demo key users will be logged out within 5 seconds.",
             revokedAt: revocationData.revokedAt,
-            verified: verifyStatus.revoked
+            verified: isActuallyRevoked,
+            filePath: DEMO_KEY_REVOCATION_FILE
         })
     } catch (error) {
         log(`[Demo Key Revocation] Error revoking demo keys: ${error.message}`, "error")
