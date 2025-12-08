@@ -310,38 +310,6 @@ app.use(express.json({ limit: "10mb" }))
 app.use(express.urlencoded({ extended: true, limit: "10mb" }))
 app.use(express.urlencoded({ extended: true, limit: "1mb" })) // For form submissions
 
-// Visitor tracking middleware (track all page visits)
-app.use((req, res, next) => {
-    // Skip tracking for API endpoints, static files, and admin pages
-    const skipPaths = [
-        '/api/',
-        '/favicon.ico',
-        '/static/',
-        '/analytics',
-        '/users',
-        '/login',
-        '/logout',
-        '/health',
-        '/tunnel-test'
-    ]
-    
-    const shouldTrack = !skipPaths.some(path => req.path.startsWith(path))
-    
-    if (shouldTrack) {
-        // Track visitor asynchronously (don't block request)
-        setImmediate(() => {
-            try {
-                trackVisitor(req)
-            } catch (error) {
-                // Silently fail - don't break the request
-                log(`[Visitor Tracking] Error: ${error.message}`, "error")
-            }
-        })
-    }
-    
-    next()
-})
-
 // Input sanitization helper function
 function sanitizeInput(input) {
     if (typeof input !== 'string') return input
@@ -415,40 +383,14 @@ app.use(
     })
 )
 
-// Founder credentials (from environment variables or defaults)
-const FOUNDER_CREDENTIALS = {
-    darsh: {
-        username: process.env.DARSH_USERNAME || "darsh",
-        password: process.env.DARSH_PASSWORD || "Darsh9900",
-        name: "Darsh Vekaria",
-        email: "darshvekaria1@gmail.com"
-    },
-    siddhant: {
-        username: process.env.SIDDHANT_USERNAME || "siddhant",
-        password: process.env.SIDDHANT_PASSWORD || "siddhant12221",
-        name: "Siddhant Sathe",
-        email: "siddhant@lumra.ai"
-    }
-}
-
 // Developer authentication middleware
 function requireDeveloperAuth(req, res, next) {
-    if (req.session && (req.session.developerAuthenticated || req.session.founderAuthenticated)) {
+    if (req.session && req.session.developerAuthenticated) {
         return next()
     }
     // Redirect to login if not authenticated, preserving the intended destination
     const returnUrl = req.originalUrl !== '/login' ? `?returnUrl=${encodeURIComponent(req.originalUrl)}` : ''
     res.redirect(`/login${returnUrl}`)
-}
-
-// Founder authentication middleware
-function requireFounderAuth(req, res, next) {
-    if (req.session && req.session.founderAuthenticated) {
-        return next()
-    }
-    // Redirect to founders login if not authenticated
-    const returnUrl = req.originalUrl !== '/founders-login' ? `?returnUrl=${encodeURIComponent(req.originalUrl)}` : ''
-    res.redirect(`/founders-login${returnUrl}`)
 }
 
 // Developer login page
@@ -690,10 +632,6 @@ app.get("/login", (req, res) => {
             <button type="submit" class="submit-btn">⚠️ Sign In to Backend</button>
         </form>
         
-        <div style="margin-top: 20px; text-align: center;">
-            <a href="/founders-login" style="color: #94a3b8; text-decoration: none; font-size: 0.9rem;">Founders Login →</a>
-        </div>
-        
         <div class="info">
             <strong>🔒 RESTRICTED AREA</strong><br>
             Access to: Status Dashboard, Analytics & System Logs<br>
@@ -706,297 +644,6 @@ app.get("/login", (req, res) => {
 })
 
 // Developer login handler
-// Founders login page (selection page)
-app.get("/founders-login", (req, res) => {
-    if (req.session && req.session.founderAuthenticated) {
-        const returnUrl = req.query.returnUrl || '/'
-        return res.redirect(returnUrl)
-    }
-    
-    const error = req.query.error || ''
-    const returnUrl = req.query.returnUrl || '/'
-    
-    res.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Founders Login - Lumra</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        .container {
-            background: #1e293b;
-            border: 2px solid #6366f1;
-            border-radius: 16px;
-            padding: 40px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 0 30px rgba(99, 102, 241, 0.3);
-            max-width: 500px;
-            width: 100%;
-            text-align: center;
-        }
-        .logo {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #fff;
-            margin-bottom: 10px;
-        }
-        .subtitle {
-            color: #94a3b8;
-            margin-bottom: 30px;
-        }
-        .error {
-            background: #ef4444;
-            color: white;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            display: ${error ? 'block' : 'none'};
-        }
-        .founder-options {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-        .founder-btn {
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-            color: white;
-            border: none;
-            padding: 20px 30px;
-            border-radius: 12px;
-            font-size: 1.1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-decoration: none;
-            display: block;
-        }
-        .founder-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);
-        }
-        .founder-btn:active {
-            transform: translateY(0);
-        }
-        .back-link {
-            margin-top: 20px;
-            color: #94a3b8;
-            text-decoration: none;
-            font-size: 0.9rem;
-        }
-        .back-link:hover {
-            color: #fff;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="logo">Lumra</div>
-        <div class="subtitle">Founders Login</div>
-        ${error ? `<div class="error">${error}</div>` : ''}
-        <div class="founder-options">
-            <a href="/founders-login/darsh${returnUrl ? '?returnUrl=' + encodeURIComponent(returnUrl) : ''}" class="founder-btn">
-                Login with Darsh
-            </a>
-            <a href="/founders-login/siddhant${returnUrl ? '?returnUrl=' + encodeURIComponent(returnUrl) : ''}" class="founder-btn">
-                Login with Siddhant
-            </a>
-        </div>
-        <a href="/login" class="back-link">← Back to Developer Login</a>
-    </div>
-</body>
-</html>
-    `)
-})
-
-// Individual founder login pages
-app.get("/founders-login/:founder", (req, res) => {
-    const founder = req.params.founder.toLowerCase()
-    const returnUrl = req.query.returnUrl || '/'
-    
-    if (founder !== 'darsh' && founder !== 'siddhant') {
-        return res.redirect('/founders-login')
-    }
-    
-    if (req.session && req.session.founderAuthenticated && req.session.founderType === founder) {
-        return res.redirect(returnUrl)
-    }
-    
-    const error = req.query.error || ''
-    const founderInfo = FOUNDER_CREDENTIALS[founder]
-    
-    res.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${founderInfo.name} Login - Lumra</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        .container {
-            background: #1e293b;
-            border: 2px solid #6366f1;
-            border-radius: 16px;
-            padding: 40px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 0 30px rgba(99, 102, 241, 0.3);
-            max-width: 450px;
-            width: 100%;
-        }
-        .logo {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #fff;
-            text-align: center;
-            margin-bottom: 10px;
-        }
-        .subtitle {
-            color: #94a3b8;
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .error {
-            background: #ef4444;
-            color: white;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            display: ${error ? 'block' : 'none'};
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            color: #e2e8f0;
-            margin-bottom: 8px;
-            font-weight: 500;
-        }
-        input {
-            width: 100%;
-            padding: 12px 16px;
-            background: #0f172a;
-            border: 1px solid #334155;
-            border-radius: 8px;
-            color: #fff;
-            font-size: 1rem;
-        }
-        input:focus {
-            outline: none;
-            border-color: #6366f1;
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-        }
-        .btn {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);
-        }
-        .back-link {
-            margin-top: 20px;
-            text-align: center;
-        }
-        .back-link a {
-            color: #94a3b8;
-            text-decoration: none;
-            font-size: 0.9rem;
-        }
-        .back-link a:hover {
-            color: #fff;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="logo">Lumra</div>
-        <div class="subtitle">${founderInfo.name} Login</div>
-        ${error ? `<div class="error">${error}</div>` : ''}
-        <form method="POST" action="/founders-login/${founder}">
-            <input type="hidden" name="returnUrl" value="${returnUrl}">
-            <div class="form-group">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" required autofocus placeholder="Enter username">
-            </div>
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" required placeholder="Enter password">
-            </div>
-            <button type="submit" class="btn">Login</button>
-        </form>
-        <div class="back-link">
-            <a href="/founders-login">← Back to Founders Selection</a>
-        </div>
-    </div>
-</body>
-</html>
-    `)
-})
-
-// Founder login POST handler
-app.post("/founders-login/:founder", (req, res) => {
-    const founder = req.params.founder.toLowerCase()
-    const { username, password, returnUrl } = req.body
-    
-    if (founder !== 'darsh' && founder !== 'siddhant') {
-        return res.redirect('/founders-login?error=Invalid founder')
-    }
-    
-    const founderInfo = FOUNDER_CREDENTIALS[founder]
-    const trimmedUsername = (username || '').trim()
-    const trimmedPassword = (password || '').trim()
-    
-    if (!trimmedUsername || !trimmedPassword) {
-        const error = encodeURIComponent("Username and password are required")
-        return res.redirect(`/founders-login/${founder}?error=${error}${returnUrl ? '&returnUrl=' + encodeURIComponent(returnUrl) : ''}`)
-    }
-    
-    if (trimmedUsername === founderInfo.username && trimmedPassword === founderInfo.password) {
-        req.session.founderAuthenticated = true
-        req.session.founderType = founder
-        req.session.founderName = founderInfo.name
-        req.session.founderEmail = founderInfo.email
-        req.session.developerAuthenticated = true // Also allow access to developer routes
-        req.session.developerUsername = founderInfo.name
-        
-        log(`[Founder Login] ✅ ${founderInfo.name} logged in successfully`)
-        
-        const redirectUrl = returnUrl || '/'
-        return res.redirect(redirectUrl)
-    } else {
-        log(`[Founder Login] ❌ Failed login attempt for ${founder} (username: ${trimmedUsername})`)
-        const error = encodeURIComponent("Invalid username or password")
-        return res.redirect(`/founders-login/${founder}?error=${error}${returnUrl ? '&returnUrl=' + encodeURIComponent(returnUrl) : ''}`)
-    }
-})
-
 app.post("/login", (req, res) => {
     const { username, password, returnUrl } = req.body || {}
     
@@ -1029,11 +676,8 @@ app.post("/login", (req, res) => {
     }
 })
 
-// Developer/Founder logout with cookie clearing
+// Developer logout with cookie clearing
 app.get("/logout", (req, res) => {
-    const wasFounder = req.session && req.session.founderAuthenticated
-    const founderName = req.session && req.session.founderName
-    
     // Clear all authentication cookies
     res.clearCookie('lumra_token', {
         httpOnly: true,
@@ -1050,9 +694,6 @@ app.get("/logout", (req, res) => {
     
     // Destroy session
     req.session.destroy((err) => {
-        if (wasFounder) {
-            log(`[Founder Logout] ${founderName || 'Founder'} logged out`)
-        }
         if (err) {
             console.error("Error destroying session:", err)
         }
@@ -2427,8 +2068,8 @@ app.get("/", requireDeveloperAuth, (req, res) => {
     const profileCount = userProfiles.size
     const isOpenAIReady = Boolean(openAiKey)
     const isAnthropicReady = Boolean(anthropicKey)
-    const developerUsername = req.session.founderName || req.session.developerUsername || 'Admin User'
-    const developerEmail = req.session.founderEmail || req.session.developerEmail || 'admin@edu.com'
+    const developerUsername = req.session.developerUsername || 'Admin User'
+    const developerEmail = req.session.developerEmail || 'admin@edu.com'
     const maintenance = loadMaintenanceMode()
     const analytics = loadAnalytics()
     
@@ -2926,14 +2567,14 @@ app.get("/", requireDeveloperAuth, (req, res) => {
                 </li>
                 <li class="sidebar-menu-item">
                     <a href="/analytics" class="sidebar-menu-button">
-                        <span class="sidebar-menu-icon">📈</span>
-                        <span>Analytics</span>
+                        <span class="sidebar-menu-icon">🤖</span>
+                        <span>AI Analytics</span>
                     </a>
                 </li>
                 <li class="sidebar-menu-item">
-                    <a href="/analytics/ai" class="sidebar-menu-button">
-                        <span class="sidebar-menu-icon">🤖</span>
-                        <span>AI Analytics</span>
+                    <a href="#" class="sidebar-menu-button">
+                        <span class="sidebar-menu-icon">📈</span>
+                        <span>Analytics</span>
                     </a>
                 </li>
                 <li class="sidebar-menu-item">
@@ -3432,553 +3073,7 @@ app.get("/api/maintenance/status", requireDeveloperAuth, (req, res) => {
     }
 })
 
-// General Analytics page (visitors, demo keys, etc.)
 app.get("/analytics", requireDeveloperAuth, (req, res) => {
-    try {
-        const analytics = loadAnalytics()
-        
-        // Get visitor stats
-        const visitorStats = analytics.visitors || {
-            totalVisitors: 0,
-            uniqueVisitors: 0,
-            totalPageViews: 0,
-            dailyStats: {},
-            lastVisitorDate: null
-        }
-        
-        // Get demo request stats
-        const demoRequestStats = analytics.demoRequests || {
-            totalRequests: 0,
-            pendingRequests: 0,
-            fulfilledRequests: 0,
-            dailyRequests: {},
-            lastRequestDate: null
-        }
-        
-        // Load actual demo requests to get accurate pending count
-        const DEMO_REQUESTS_FILE = join(__dirname, "demo_requests.json")
-        let actualPendingCount = demoRequestStats.pendingRequests || 0
-        if (existsSync(DEMO_REQUESTS_FILE)) {
-            try {
-                const requestsData = readFileSync(DEMO_REQUESTS_FILE, "utf-8")
-                const requests = JSON.parse(requestsData)
-                actualPendingCount = requests.filter(r => r.status === "pending" && !r.keyGenerated).length
-            } catch (error) {
-                // Use default if file read fails
-            }
-        }
-        
-        // Get last 7 days of visitor stats
-        const last7Days = []
-        const today = new Date()
-        for (let i = 6; i >= 0; i--) {
-            const date = new Date(today)
-            date.setDate(date.getDate() - i)
-            const dateStr = date.toISOString().split('T')[0]
-            const dayStats = visitorStats.dailyStats[dateStr] || { visitors: 0, pageViews: 0 }
-            last7Days.push({
-                date: dateStr,
-                label: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
-                visitors: dayStats.visitors || 0,
-                pageViews: dayStats.pageViews || 0
-            })
-        }
-        
-        // Get last 7 days of demo requests
-        const last7DaysDemo = []
-        for (let i = 6; i >= 0; i--) {
-            const date = new Date(today)
-            date.setDate(date.getDate() - i)
-            const dateStr = date.toISOString().split('T')[0]
-            const dayRequests = demoRequestStats.dailyRequests[dateStr] || 0
-            last7DaysDemo.push({
-                date: dateStr,
-                label: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
-                requests: dayRequests
-            })
-        }
-
-        res.send(`
-<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <title>Analytics - Lumra</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <style>
-        :root {
-            --font-size: 16px;
-            --background: oklch(0.145 0 0);
-            --foreground: oklch(0.985 0 0);
-            --card: oklch(0.145 0 0);
-            --card-foreground: oklch(0.985 0 0);
-            --primary: oklch(0.985 0 0);
-            --primary-foreground: oklch(0.205 0 0);
-            --secondary: oklch(0.269 0 0);
-            --secondary-foreground: oklch(0.985 0 0);
-            --muted: oklch(0.269 0 0);
-            --muted-foreground: oklch(0.708 0 0);
-            --accent: oklch(0.269 0 0);
-            --accent-foreground: oklch(0.985 0 0);
-            --border: oklch(0.269 0 0);
-            --radius: 0.625rem;
-            --sidebar: oklch(0.205 0 0);
-            --sidebar-foreground: oklch(0.985 0 0);
-            --sidebar-primary: oklch(0.488 0.243 264.376);
-            --sidebar-primary-foreground: oklch(0.985 0 0);
-            --sidebar-accent: oklch(0.269 0 0);
-            --sidebar-accent-foreground: oklch(0.985 0 0);
-            --sidebar-border: oklch(0.269 0 0);
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--background);
-            color: var(--foreground);
-            min-height: 100vh;
-            display: flex;
-            overflow: hidden;
-        }
-
-        .sidebar {
-            width: 16rem;
-            background: var(--sidebar);
-            color: var(--sidebar-foreground);
-            border-right: 1px solid var(--sidebar-border);
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            position: fixed;
-            left: 0;
-            top: 0;
-            z-index: 10;
-        }
-
-        .sidebar-header {
-            padding: 1.5rem;
-            border-bottom: 1px solid var(--sidebar-border);
-        }
-
-        .sidebar-logo {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--sidebar-foreground);
-        }
-
-        .sidebar-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 0.5rem;
-        }
-
-        .sidebar-menu {
-            list-style: none;
-        }
-
-        .sidebar-menu-item {
-            margin-bottom: 0.25rem;
-        }
-
-        .sidebar-menu-button {
-            width: 100%;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 0.625rem 0.75rem;
-            border-radius: calc(var(--radius) - 2px);
-            background: transparent;
-            border: none;
-            color: var(--sidebar-foreground);
-            cursor: pointer;
-            transition: all 0.2s;
-            font-size: 0.875rem;
-            text-align: left;
-            text-decoration: none;
-        }
-
-        .sidebar-menu-button:hover {
-            background: var(--sidebar-accent);
-            color: var(--sidebar-accent-foreground);
-        }
-
-        .sidebar-menu-button.active {
-            background: var(--sidebar-primary);
-            color: var(--sidebar-primary-foreground);
-            font-weight: 500;
-        }
-
-        .main-content {
-            flex: 1;
-            margin-left: 16rem;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
-            background: linear-gradient(to bottom right, #000000, #0a0a0a, #000000);
-        }
-
-        .header {
-            padding: 1.5rem;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: var(--background);
-        }
-
-        .header-title {
-            font-size: 1.875rem;
-            font-weight: 700;
-            color: var(--foreground);
-        }
-
-        .header-actions {
-            display: flex;
-            gap: 0.75rem;
-            align-items: center;
-        }
-
-        .btn {
-            padding: 0.5rem 1rem;
-            border-radius: calc(var(--radius) - 2px);
-            border: 1px solid var(--border);
-            background: var(--secondary);
-            color: var(--secondary-foreground);
-            cursor: pointer;
-            font-size: 0.875rem;
-            font-weight: 500;
-            transition: all 0.2s;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .btn:hover {
-            background: var(--accent);
-            color: var(--accent-foreground);
-        }
-
-        .content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 1.5rem;
-        }
-
-        .card {
-            background: var(--card);
-            color: var(--card-foreground);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-        }
-
-        .card-header {
-            display: flex;
-            flex-direction: column;
-            gap: 0.375rem;
-        }
-
-        .card-title {
-            font-size: 1.125rem;
-            font-weight: 600;
-            color: var(--foreground);
-        }
-
-        .card-description {
-            font-size: 0.875rem;
-            color: var(--muted-foreground);
-        }
-
-        .grid {
-            display: grid;
-            gap: 1.5rem;
-        }
-
-        .grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
-        .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-
-        .kpi-card {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        .kpi-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-        }
-
-        .kpi-icon {
-            width: 2.5rem;
-            height: 2.5rem;
-            border-radius: calc(var(--radius) - 2px);
-            background: var(--secondary);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.25rem;
-        }
-
-        .kpi-value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--foreground);
-            line-height: 1;
-        }
-
-        .kpi-label {
-            font-size: 0.875rem;
-            color: var(--muted-foreground);
-        }
-
-        .chart-container {
-            position: relative;
-            height: 300px;
-            width: 100%;
-        }
-
-        @media (max-width: 768px) {
-            .sidebar {
-                transform: translateX(-100%);
-            }
-            .main-content {
-                margin-left: 0;
-            }
-            .grid-cols-2, .grid-cols-4 {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
-</head>
-<body>
-    <aside class="sidebar">
-        <div class="sidebar-header">
-            <div class="sidebar-logo">Lumra</div>
-        </div>
-        <div class="sidebar-content">
-            <ul class="sidebar-menu">
-                <li class="sidebar-menu-item">
-                    <a href="/" class="sidebar-menu-button">
-                        <span>📊</span>
-                        <span>Dashboard</span>
-                    </a>
-                </li>
-                <li class="sidebar-menu-item">
-                    <a href="/analytics" class="sidebar-menu-button active">
-                        <span>📈</span>
-                        <span>Analytics</span>
-                    </a>
-                </li>
-                <li class="sidebar-menu-item">
-                    <a href="/analytics/ai" class="sidebar-menu-button">
-                        <span>🤖</span>
-                        <span>AI Analytics</span>
-                    </a>
-                </li>
-                <li class="sidebar-menu-item">
-                    <a href="/users" class="sidebar-menu-button">
-                        <span>👥</span>
-                        <span>Users</span>
-                    </a>
-                </li>
-            </ul>
-        </div>
-        <div class="sidebar-footer" style="padding: 1rem; border-top: 1px solid var(--sidebar-border);">
-            <a href="/logout" class="btn" style="width: 100%; justify-content: center;">Logout</a>
-        </div>
-    </aside>
-
-    <main class="main-content">
-        <header class="header">
-            <h1 class="header-title">Analytics</h1>
-            <div class="header-actions">
-                <button class="btn" onclick="refreshData()">🔄 Refresh</button>
-                <span id="last-updated" style="font-size: 0.875rem; color: var(--muted-foreground);"></span>
-            </div>
-        </header>
-
-        <div class="content">
-            <!-- KPI Cards -->
-            <div class="grid grid-cols-4" style="margin-bottom: 1.5rem;">
-                <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">👥</div>
-                    </div>
-                    <div class="kpi-value" id="stat-visitors">${visitorStats.totalVisitors || 0}</div>
-                    <div class="kpi-label">Total Visitors</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">🔍</div>
-                    </div>
-                    <div class="kpi-value" id="stat-page-views">${visitorStats.totalPageViews || 0}</div>
-                    <div class="kpi-label">Page Views</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">🔑</div>
-                    </div>
-                    <div class="kpi-value" id="stat-demo-requests">${demoRequestStats.totalRequests || 0}</div>
-                    <div class="kpi-label">Demo Key Requests</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">⏳</div>
-                    </div>
-                    <div class="kpi-value" id="stat-pending">${actualPendingCount}</div>
-                    <div class="kpi-label">Pending Requests</div>
-                </div>
-            </div>
-
-            <!-- Charts Grid -->
-            <div class="grid grid-cols-2" style="margin-bottom: 1.5rem;">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Visitor Trends (Last 7 Days)</div>
-                        <div class="card-description">Daily visitors and page views</div>
-                    </div>
-                    <div class="card-content">
-                        <div class="chart-container">
-                            <canvas id="visitorChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Demo Key Requests (Last 7 Days)</div>
-                        <div class="card-description">Daily demo key requests</div>
-                    </div>
-                    <div class="card-content">
-                        <div class="chart-container">
-                            <canvas id="demoRequestChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </main>
-
-    <script>
-        Chart.defaults.color = 'rgba(255, 255, 255, 0.8)';
-        Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
-        Chart.defaults.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-
-        const visitorData = ${JSON.stringify(last7Days)};
-        const demoRequestData = ${JSON.stringify(last7DaysDemo)};
-
-        // Visitor Chart
-        const visitorCtx = document.getElementById('visitorChart');
-        const visitorChart = new Chart(visitorCtx, {
-            type: 'line',
-            data: {
-                labels: visitorData.map(d => d.label),
-                datasets: [
-                    {
-                        label: 'Visitors',
-                        data: visitorData.map(d => d.visitors),
-                        borderColor: 'rgba(102, 126, 234, 1)',
-                        backgroundColor: 'rgba(102, 126, 234, 0.2)',
-                        tension: 0.4,
-                        fill: true
-                    },
-                    {
-                        label: 'Page Views',
-                        data: visitorData.map(d => d.pageViews),
-                        borderColor: 'rgba(16, 185, 129, 1)',
-                        backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                        tension: 0.4,
-                        fill: true
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: true,
-                        position: 'top'
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            stepSize: 1
-                        }
-                    }
-                }
-            }
-        });
-
-        // Demo Request Chart
-        const demoCtx = document.getElementById('demoRequestChart');
-        const demoChart = new Chart(demoCtx, {
-            type: 'bar',
-            data: {
-                labels: demoRequestData.map(d => d.label),
-                datasets: [{
-                    label: 'Demo Key Requests',
-                    data: demoRequestData.map(d => d.requests),
-                    backgroundColor: 'rgba(139, 92, 246, 0.8)',
-                    borderColor: 'rgba(139, 92, 246, 1)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            stepSize: 1
-                        }
-                    }
-                }
-            }
-        });
-
-        function refreshData() {
-            location.reload();
-        }
-
-        document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
-    </script>
-</body>
-</html>
-        `)
-    } catch (error) {
-        log(`[Analytics] Error loading analytics page: ${error.message}`, "error")
-        res.status(500).send(`<h1>Error loading analytics</h1><p>${error.message}</p>`)
-    }
-})
-
-// AI Analytics page (separate from general analytics)
-app.get("/analytics/ai", requireDeveloperAuth, (req, res) => {
     try {
         const analytics = loadAnalytics()
         const avgResponseTime = analytics.responseTimes.length > 0
@@ -3988,37 +3083,6 @@ app.get("/analytics/ai", requireDeveloperAuth, (req, res) => {
         const successRate = analytics.totalConversations > 0
             ? Math.round((analytics.fusedCalls / analytics.totalConversations) * 100)
             : 0
-        
-        // Get visitor stats
-        const visitorStats = analytics.visitors || {
-            totalVisitors: 0,
-            uniqueVisitors: 0,
-            totalPageViews: 0,
-            dailyStats: {},
-            lastVisitorDate: null
-        }
-        
-        // Get demo request stats
-        const demoRequestStats = analytics.demoRequests || {
-            totalRequests: 0,
-            pendingRequests: 0,
-            fulfilledRequests: 0,
-            dailyRequests: {},
-            lastRequestDate: null
-        }
-        
-        // Load actual demo requests to get accurate pending count
-        const DEMO_REQUESTS_FILE = join(__dirname, "demo_requests.json")
-        let actualPendingCount = demoRequestStats.pendingRequests || 0
-        if (existsSync(DEMO_REQUESTS_FILE)) {
-            try {
-                const requestsData = readFileSync(DEMO_REQUESTS_FILE, "utf-8")
-                const requests = JSON.parse(requestsData)
-                actualPendingCount = requests.filter(r => r.status === "pending" && !r.keyGenerated).length
-            } catch (error) {
-                // Use default if file read fails
-            }
-        }
 
         res.send(`
 <!DOCTYPE html>
@@ -4368,13 +3432,7 @@ app.get("/analytics/ai", requireDeveloperAuth, (req, res) => {
                     </a>
                 </li>
                 <li class="sidebar-menu-item">
-                    <a href="/analytics" class="sidebar-menu-button">
-                        <span class="sidebar-menu-icon">📈</span>
-                        <span>Analytics</span>
-                    </a>
-                </li>
-                <li class="sidebar-menu-item">
-                    <a href="/analytics/ai" class="sidebar-menu-button active">
+                    <a href="/analytics" class="sidebar-menu-button active">
                         <span class="sidebar-menu-icon">🤖</span>
                         <span>AI Analytics</span>
                     </a>
@@ -4409,7 +3467,7 @@ app.get("/analytics/ai", requireDeveloperAuth, (req, res) => {
         </header>
 
         <div class="content">
-            <!-- AI Stats Row -->
+            <!-- KPI Cards -->
             <div class="grid grid-cols-4" style="margin-bottom: 1.5rem;">
                 <div class="kpi-card">
                     <div class="kpi-header">
@@ -4542,21 +3600,11 @@ app.get("/analytics/ai", requireDeveloperAuth, (req, res) => {
                 const data = await response.json();
                 if (data.success && data.analytics) {
                     const analytics = data.analytics;
-                    
-                    // Update AI stats
-                    if (document.getElementById('stat-conversations')) {
-                        document.getElementById('stat-conversations').textContent = analytics.totalConversations || 0;
-                    }
+                    document.getElementById('stat-conversations').textContent = analytics.totalConversations || 0;
                     const avgRT = analytics.averageResponseTime || 0;
-                    if (document.getElementById('stat-response-time')) {
-                        document.getElementById('stat-response-time').textContent = (avgRT / 1000).toFixed(1) + 's';
-                    }
-                    if (document.getElementById('stat-tokens')) {
-                        document.getElementById('stat-tokens').textContent = ((analytics.totalTokens || 0) / 1000).toFixed(1) + 'K';
-                    }
-                    if (document.getElementById('stat-cost')) {
-                        document.getElementById('stat-cost').textContent = '$' + (analytics.totalCost || 0).toFixed(2);
-                    }
+                    document.getElementById('stat-response-time').textContent = (avgRT / 1000).toFixed(1) + 's';
+                    document.getElementById('stat-tokens').textContent = ((analytics.totalTokens || 0) / 1000).toFixed(1) + 'K';
+                    document.getElementById('stat-cost').textContent = '$' + (analytics.totalCost || 0).toFixed(2);
                 }
             } catch (error) {
                 console.error('Error updating stats:', error);
@@ -6832,32 +5880,7 @@ function loadAnalytics() {
     try {
         if (existsSync(ANALYTICS_FILE)) {
             const data = readFileSync(ANALYTICS_FILE, "utf-8")
-            const analytics = JSON.parse(data)
-            // Ensure new fields exist for backward compatibility
-            if (!analytics.visitors) {
-                analytics.visitors = {
-                    totalVisitors: 0,
-                    uniqueVisitors: 0,
-                    totalPageViews: 0,
-                    dailyStats: {},
-                    visitorIPs: new Set(),
-                    lastVisitorDate: null
-                }
-            }
-            if (!analytics.demoRequests) {
-                analytics.demoRequests = {
-                    totalRequests: 0,
-                    pendingRequests: 0,
-                    fulfilledRequests: 0,
-                    dailyRequests: {},
-                    lastRequestDate: null
-                }
-            }
-            // Convert Set from JSON (if it was saved as array)
-            if (Array.isArray(analytics.visitors.visitorIPs)) {
-                analytics.visitors.visitorIPs = new Set(analytics.visitors.visitorIPs)
-            }
-            return analytics
+            return JSON.parse(data)
         }
     } catch (error) {
         console.error("Error loading analytics:", error)
@@ -6879,21 +5902,6 @@ function loadAnalytics() {
         pageScans: 0,
         responseTimes: [],
         toneAdaptationRate: 0,
-        visitors: {
-            totalVisitors: 0,
-            uniqueVisitors: 0,
-            totalPageViews: 0,
-            dailyStats: {},
-            visitorIPs: new Set(),
-            lastVisitorDate: null
-        },
-        demoRequests: {
-            totalRequests: 0,
-            pendingRequests: 0,
-            fulfilledRequests: 0,
-            dailyRequests: {},
-            lastRequestDate: null
-        },
         lastUpdated: new Date().toISOString()
     }
 }
@@ -6964,173 +5972,9 @@ function updateAnalytics(metrics) {
         
         analytics.lastUpdated = new Date().toISOString()
         
-        // Convert Set to Array for JSON serialization
-        const analyticsToSave = {
-            ...analytics,
-            visitors: {
-                ...analytics.visitors,
-                visitorIPs: Array.from(analytics.visitors.visitorIPs || [])
-            }
-        }
-        
-        writeFileSync(ANALYTICS_FILE, JSON.stringify(analyticsToSave, null, 2))
+        writeFileSync(ANALYTICS_FILE, JSON.stringify(analytics, null, 2))
     } catch (error) {
         console.error("Error updating analytics:", error)
-    }
-}
-
-// Track visitor (called on each page visit)
-function trackVisitor(req) {
-    try {
-        const analytics = loadAnalytics()
-        const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
-        
-        // Get visitor IP (handle proxy)
-        const visitorIP = req.ip || 
-                         req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
-                         req.connection?.remoteAddress || 
-                         'unknown'
-        
-        // Initialize visitors object if needed
-        if (!analytics.visitors) {
-            analytics.visitors = {
-                totalVisitors: 0,
-                uniqueVisitors: 0,
-                totalPageViews: 0,
-                dailyStats: {},
-                visitorIPs: new Set(),
-                lastVisitorDate: null
-            }
-        }
-        
-        // Convert Set from JSON if needed
-        if (Array.isArray(analytics.visitors.visitorIPs)) {
-            analytics.visitors.visitorIPs = new Set(analytics.visitors.visitorIPs)
-        } else if (!analytics.visitors.visitorIPs) {
-            analytics.visitors.visitorIPs = new Set()
-        }
-        
-        // Track page view
-        analytics.visitors.totalPageViews += 1
-        
-        // Track unique visitor
-        const isNewVisitor = !analytics.visitors.visitorIPs.has(visitorIP)
-        if (isNewVisitor) {
-            analytics.visitors.visitorIPs.add(visitorIP)
-            analytics.visitors.uniqueVisitors = analytics.visitors.visitorIPs.size
-            analytics.visitors.totalVisitors += 1
-        }
-        
-        // Update daily stats
-        if (!analytics.visitors.dailyStats[today]) {
-            analytics.visitors.dailyStats[today] = {
-                visitors: 0,
-                pageViews: 0,
-                uniqueVisitors: new Set()
-            }
-        }
-        
-        // Convert dailyStats uniqueVisitors from array to Set if needed
-        if (Array.isArray(analytics.visitors.dailyStats[today].uniqueVisitors)) {
-            analytics.visitors.dailyStats[today].uniqueVisitors = new Set(
-                analytics.visitors.dailyStats[today].uniqueVisitors
-            )
-        } else if (!(analytics.visitors.dailyStats[today].uniqueVisitors instanceof Set)) {
-            analytics.visitors.dailyStats[today].uniqueVisitors = new Set()
-        }
-        
-        analytics.visitors.dailyStats[today].pageViews += 1
-        if (isNewVisitor || !analytics.visitors.dailyStats[today].uniqueVisitors.has(visitorIP)) {
-            analytics.visitors.dailyStats[today].uniqueVisitors.add(visitorIP)
-            analytics.visitors.dailyStats[today].visitors = analytics.visitors.dailyStats[today].uniqueVisitors.size
-        }
-        
-        analytics.visitors.lastVisitorDate = new Date().toISOString()
-        analytics.lastUpdated = new Date().toISOString()
-        
-        // Convert Set to Array for JSON serialization
-        const dailyStatsToSave = {}
-        Object.keys(analytics.visitors.dailyStats).forEach(date => {
-            const daily = analytics.visitors.dailyStats[date]
-            dailyStatsToSave[date] = {
-                visitors: daily.visitors,
-                pageViews: daily.pageViews,
-                uniqueVisitors: Array.from(daily.uniqueVisitors || [])
-            }
-        })
-        
-        const analyticsToSave = {
-            ...analytics,
-            visitors: {
-                ...analytics.visitors,
-                visitorIPs: Array.from(analytics.visitors.visitorIPs),
-                dailyStats: dailyStatsToSave
-            }
-        }
-        
-        writeFileSync(ANALYTICS_FILE, JSON.stringify(analyticsToSave, null, 2))
-        
-        return {
-            totalVisitors: analytics.visitors.totalVisitors,
-            uniqueVisitors: analytics.visitors.uniqueVisitors,
-            totalPageViews: analytics.visitors.totalPageViews,
-            isNewVisitor
-        }
-    } catch (error) {
-        log(`[Visitor Tracking] Error tracking visitor: ${error.message}`, "error")
-        return null
-    }
-}
-
-// Track demo key request
-function trackDemoKeyRequest() {
-    try {
-        const analytics = loadAnalytics()
-        const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
-        
-        // Initialize demoRequests object if needed
-        if (!analytics.demoRequests) {
-            analytics.demoRequests = {
-                totalRequests: 0,
-                pendingRequests: 0,
-                fulfilledRequests: 0,
-                dailyRequests: {},
-                lastRequestDate: null
-            }
-        }
-        
-        // Update counts
-        analytics.demoRequests.totalRequests += 1
-        analytics.demoRequests.pendingRequests += 1
-        
-        // Update daily stats
-        if (!analytics.demoRequests.dailyRequests[today]) {
-            analytics.demoRequests.dailyRequests[today] = 0
-        }
-        analytics.demoRequests.dailyRequests[today] += 1
-        
-        analytics.demoRequests.lastRequestDate = new Date().toISOString()
-        analytics.lastUpdated = new Date().toISOString()
-        
-        // Convert Set to Array for JSON serialization if needed
-        const analyticsToSave = {
-            ...analytics,
-            visitors: analytics.visitors ? {
-                ...analytics.visitors,
-                visitorIPs: Array.isArray(analytics.visitors.visitorIPs) 
-                    ? analytics.visitors.visitorIPs 
-                    : Array.from(analytics.visitors.visitorIPs || [])
-            } : undefined
-        }
-        
-        writeFileSync(ANALYTICS_FILE, JSON.stringify(analyticsToSave, null, 2))
-        
-        log(`[Analytics] Demo key request tracked. Total: ${analytics.demoRequests.totalRequests}`)
-        
-        return analytics.demoRequests
-    } catch (error) {
-        log(`[Demo Request Tracking] Error tracking demo request: ${error.message}`, "error")
-        return null
     }
 }
 
@@ -9359,39 +8203,15 @@ app.get("/api/analytics", authenticateToken, (req, res) => {
             ? Math.round((toneAdaptedCount / logs.length) * 100)
             : 0
         
-        // Ensure visitor and demo request data is properly formatted for JSON
-        const analyticsToReturn = {
-            ...analytics,
-            visitors: analytics.visitors ? {
-                ...analytics.visitors,
-                visitorIPs: Array.isArray(analytics.visitors.visitorIPs) 
-                    ? analytics.visitors.visitorIPs.length 
-                    : (analytics.visitors.visitorIPs instanceof Set 
-                        ? analytics.visitors.visitorIPs.size 
-                        : 0)
-            } : {
-                totalVisitors: 0,
-                uniqueVisitors: 0,
-                totalPageViews: 0,
-                dailyStats: {},
-                lastVisitorDate: null
-            },
-            demoRequests: analytics.demoRequests || {
-                totalRequests: 0,
-                pendingRequests: 0,
-                fulfilledRequests: 0,
-                dailyRequests: {},
-                lastRequestDate: null
-            },
-            successRate,
-            avgTokensPerRequest,
-            toneAdaptationPercentage,
-            totalLogs: logs.length,
-        }
-        
         res.json({
             success: true,
-            analytics: analyticsToReturn,
+            analytics: {
+                ...analytics,
+                successRate,
+                avgTokensPerRequest,
+                toneAdaptationPercentage,
+                totalLogs: logs.length,
+            },
             recentActivity: recentLogs.slice(-10).map(log => ({
                 id: log.id,
                 timestamp: log.timestamp,
@@ -10204,9 +9024,6 @@ app.post("/api/demo/request", apiLimiter, async (req, res) => {
 
         log(`[Demo Key Request] New request from: ${trimmedName} (${trimmedEmail})`)
 
-        // Track in analytics
-        trackDemoKeyRequest()
-
         // Send email notification asynchronously (don't wait for it)
         // Also log to a simple text file for easy access
         const simpleLogFile = join(__dirname, "demo_requests_simple.txt")
@@ -10260,6 +9077,17 @@ app.get("/api/demo/requests", requireDeveloperAuth, async (req, res) => {
 
 app.post("/api/demo/validate", apiLimiter, async (req, res) => {
     try {
+        // First check if demo keys are revoked
+        const revocationStatus = loadDemoKeyRevocation()
+        if (revocationStatus.revoked) {
+            log(`[Demo Key] Validation rejected - demo keys are revoked`)
+            return res.json({
+                valid: false,
+                revoked: true,
+                message: "Demo keys have been revoked. Please contact support for access."
+            })
+        }
+
         const { key } = req.body
 
         if (!key || typeof key !== "string") {
@@ -10371,6 +9199,109 @@ app.get("/api/demo/keys", requireDeveloperAuth, async (req, res) => {
         res.status(500).json({
             success: false,
             error: "Failed to fetch demo keys"
+        })
+    }
+})
+
+// Demo key revocation status file
+const DEMO_KEY_REVOCATION_FILE = join(__dirname, "demo_key_revocation.json")
+
+function loadDemoKeyRevocation() {
+    if (existsSync(DEMO_KEY_REVOCATION_FILE)) {
+        try {
+            const data = readFileSync(DEMO_KEY_REVOCATION_FILE, "utf-8")
+            return JSON.parse(data)
+        } catch (error) {
+            log(`[Demo Key Revocation] Error loading revocation status: ${error.message}`, "error")
+            return { revoked: false, revokedAt: null, revokedBy: null }
+        }
+    }
+    return { revoked: false, revokedAt: null, revokedBy: null }
+}
+
+function saveDemoKeyRevocation(data) {
+    try {
+        writeFileSync(DEMO_KEY_REVOCATION_FILE, JSON.stringify(data, null, 2), "utf-8")
+        return true
+    } catch (error) {
+        log(`[Demo Key Revocation] Error saving revocation status: ${error.message}`, "error")
+        return false
+    }
+}
+
+// Check if demo keys are currently valid (public endpoint)
+app.get("/api/demo/status", async (req, res) => {
+    try {
+        const revocationStatus = loadDemoKeyRevocation()
+        res.json({
+            valid: !revocationStatus.revoked,
+            revoked: revocationStatus.revoked,
+            revokedAt: revocationStatus.revokedAt,
+            message: revocationStatus.revoked 
+                ? "Demo keys have been revoked. Please contact support for access." 
+                : "Demo keys are currently valid"
+        })
+    } catch (error) {
+        log(`[Demo Key Status] Error checking status: ${error.message}`, "error")
+        res.status(500).json({
+            valid: false,
+            revoked: false,
+            error: "Failed to check demo key status"
+        })
+    }
+})
+
+// Revoke all demo keys (admin endpoint)
+app.post("/api/demo/revoke-all", requireDeveloperAuth, async (req, res) => {
+    try {
+        const revocationData = {
+            revoked: true,
+            revokedAt: new Date().toISOString(),
+            revokedBy: req.session?.developerEmail || "admin",
+            message: req.body.message || "All demo keys have been revoked by administrator"
+        }
+        
+        saveDemoKeyRevocation(revocationData)
+        log(`[Demo Key Revocation] ✅ All demo keys revoked by ${revocationData.revokedBy}`)
+        
+        res.json({
+            success: true,
+            message: "All demo keys have been revoked. All demo key users will be logged out.",
+            revokedAt: revocationData.revokedAt
+        })
+    } catch (error) {
+        log(`[Demo Key Revocation] Error revoking demo keys: ${error.message}`, "error")
+        res.status(500).json({
+            success: false,
+            error: "Failed to revoke demo keys"
+        })
+    }
+})
+
+// Restore demo keys (admin endpoint)
+app.post("/api/demo/restore", requireDeveloperAuth, async (req, res) => {
+    try {
+        const revocationData = {
+            revoked: false,
+            revokedAt: null,
+            revokedBy: null,
+            restoredAt: new Date().toISOString(),
+            restoredBy: req.session?.developerEmail || "admin"
+        }
+        
+        saveDemoKeyRevocation(revocationData)
+        log(`[Demo Key Revocation] ✅ Demo keys restored by ${revocationData.restoredBy}`)
+        
+        res.json({
+            success: true,
+            message: "Demo keys have been restored. Users can now access the demo again.",
+            restoredAt: revocationData.restoredAt
+        })
+    } catch (error) {
+        log(`[Demo Key Revocation] Error restoring demo keys: ${error.message}`, "error")
+        res.status(500).json({
+            success: false,
+            error: "Failed to restore demo keys"
         })
     }
 })
