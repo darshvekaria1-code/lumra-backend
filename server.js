@@ -9257,7 +9257,7 @@ app.post("/api/demo/revoke-all", requireDeveloperAuth, async (req, res) => {
         const revocationData = {
             revoked: true,
             revokedAt: new Date().toISOString(),
-            revokedBy: req.session?.developerEmail || "admin",
+            revokedBy: req.session?.developerUsername || req.session?.developerEmail || "admin",
             message: req.body.message || "All demo keys have been revoked by administrator"
         }
         
@@ -9286,7 +9286,7 @@ app.post("/api/demo/restore", requireDeveloperAuth, async (req, res) => {
             revokedAt: null,
             revokedBy: null,
             restoredAt: new Date().toISOString(),
-            restoredBy: req.session?.developerEmail || "admin"
+            restoredBy: req.session?.developerUsername || req.session?.developerEmail || "admin"
         }
         
         saveDemoKeyRevocation(revocationData)
@@ -9303,6 +9303,274 @@ app.post("/api/demo/restore", requireDeveloperAuth, async (req, res) => {
             success: false,
             error: "Failed to restore demo keys"
         })
+    }
+})
+
+// Demo Key Management Page (admin interface)
+app.get("/demo-keys", requireDeveloperAuth, async (req, res) => {
+    try {
+        const revocationStatus = loadDemoKeyRevocation()
+        const demoKeysData = loadDemoKeys()
+        
+        res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo Key Management - Lumra Backend</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #e2e8f0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            border: 2px solid #6366f1;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .header h1 {
+            color: #fbbf24;
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+        .header p {
+            color: #94a3b8;
+        }
+        .status-card {
+            background: #1e293b;
+            border: 2px solid ${revocationStatus.revoked ? '#ef4444' : '#10b981'};
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        }
+        .status-card h2 {
+            color: ${revocationStatus.revoked ? '#fca5a5' : '#6ee7b7'};
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+        }
+        .status-info {
+            color: #cbd5e1;
+            margin-bottom: 10px;
+        }
+        .status-info strong {
+            color: #fbbf24;
+        }
+        .actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-revoke {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+        .btn-revoke:hover {
+            background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(239, 68, 68, 0.5);
+        }
+        .btn-restore {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+        .btn-restore:hover {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(16, 185, 129, 0.5);
+        }
+        .btn-check {
+            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+            color: white;
+        }
+        .btn-check:hover {
+            background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(99, 102, 241, 0.5);
+        }
+        .btn-back {
+            background: #334155;
+            color: white;
+        }
+        .btn-back:hover {
+            background: #475569;
+        }
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .message.success {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid #10b981;
+            color: #6ee7b7;
+        }
+        .message.error {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid #ef4444;
+            color: #fca5a5;
+        }
+        .warning-box {
+            background: rgba(239, 68, 68, 0.1);
+            border: 2px solid #ef4444;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .warning-box h3 {
+            color: #fca5a5;
+            margin-bottom: 10px;
+        }
+        .warning-box p {
+            color: #fca5a5;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔑 Demo Key Management</h1>
+            <p>Manage demo key access and revocation</p>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div class="status-card">
+            <h2>${revocationStatus.revoked ? '❌ Demo Keys REVOKED' : '✅ Demo Keys ACTIVE'}</h2>
+            ${revocationStatus.revoked ? `
+                <div class="status-info">
+                    <strong>Revoked At:</strong> ${revocationStatus.revokedAt ? new Date(revocationStatus.revokedAt).toLocaleString() : 'N/A'}<br>
+                    <strong>Revoked By:</strong> ${revocationStatus.revokedBy || 'N/A'}
+                </div>
+                <div class="warning-box">
+                    <h3>⚠️ Warning</h3>
+                    <p>All demo keys are currently revoked. Users with demo keys will be automatically logged out and redirected to the landing page.</p>
+                </div>
+            ` : `
+                <div class="status-info">
+                    <strong>Status:</strong> Demo keys are currently active and valid.<br>
+                    Users can use demo keys to access the application.
+                </div>
+            `}
+            
+            <div class="actions">
+                ${revocationStatus.revoked ? `
+                    <button class="btn btn-restore" onclick="restoreDemoKeys()">✅ Restore Demo Keys</button>
+                ` : `
+                    <button class="btn btn-revoke" onclick="revokeDemoKeys()">❌ Revoke All Demo Keys</button>
+                `}
+                <button class="btn btn-check" onclick="checkStatus()">🔄 Check Status</button>
+                <a href="/" class="btn btn-back">← Back to Dashboard</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showMessage(text, type) {
+            const msgEl = document.getElementById('message');
+            msgEl.textContent = text;
+            msgEl.className = 'message ' + type;
+            msgEl.style.display = 'block';
+            setTimeout(() => {
+                msgEl.style.display = 'none';
+            }, 5000);
+        }
+
+        async function revokeDemoKeys() {
+            if (!confirm('⚠️ WARNING: This will revoke ALL demo keys and kick out ALL users currently using demo keys. Are you sure?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/demo/revoke-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showMessage('✅ ' + data.message, 'success');
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    showMessage('❌ Error: ' + (data.error || 'Failed to revoke demo keys'), 'error');
+                }
+            } catch (error) {
+                showMessage('❌ Error: ' + error.message, 'error');
+            }
+        }
+
+        async function restoreDemoKeys() {
+            if (!confirm('✅ Restore demo keys? This will allow users to use demo keys again.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/demo/restore', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showMessage('✅ ' + data.message, 'success');
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    showMessage('❌ Error: ' + (data.error || 'Failed to restore demo keys'), 'error');
+                }
+            } catch (error) {
+                showMessage('❌ Error: ' + error.message, 'error');
+            }
+        }
+
+        async function checkStatus() {
+            try {
+                const response = await fetch('/api/demo/status');
+                const data = await response.json();
+                
+                if (data.revoked) {
+                    showMessage('❌ Demo keys are REVOKED. Revoked at: ' + (data.revokedAt ? new Date(data.revokedAt).toLocaleString() : 'N/A'), 'error');
+                } else {
+                    showMessage('✅ Demo keys are ACTIVE and valid', 'success');
+                }
+            } catch (error) {
+                showMessage('❌ Error checking status: ' + error.message, 'error');
+            }
+        }
+    </script>
+</body>
+</html>
+        `)
+    } catch (error) {
+        log(`[Demo Key Management] Error loading page: ${error.message}`, "error")
+        res.status(500).send("Error loading demo key management page")
     }
 })
 
