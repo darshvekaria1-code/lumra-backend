@@ -416,6 +416,7 @@ app.use(
 )
 
 // Founder credentials (from environment variables or defaults)
+// Founder credentials for login authentication
 const FOUNDER_CREDENTIALS = {
     darsh: {
         username: process.env.DARSH_USERNAME || "darsh",
