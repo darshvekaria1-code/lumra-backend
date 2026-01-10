@@ -9207,9 +9207,20 @@ app.get("/api/demo/requests", requireDeveloperAuth, async (req, res) => {
     }
 })
 
+// Handle OPTIONS preflight for demo validate endpoint
+app.options("/api/demo/validate", (req, res) => {
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*')
+    res.header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    res.header('Access-Control-Allow-Headers', 'Content-Type')
+    res.header('Access-Control-Allow-Credentials', 'true')
+    res.sendStatus(200)
+})
+
 app.post("/api/demo/validate", apiLimiter, async (req, res) => {
     try {
         log(`[Demo Key] Validation request received`)
+        log(`[Demo Key] Request method: ${req.method}`)
+        log(`[Demo Key] Request headers: ${JSON.stringify(req.headers)}`)
         log(`[Demo Key] Request body: ${JSON.stringify(req.body)}`)
         
         // First check if demo keys are revoked (with error handling)
@@ -9243,6 +9254,11 @@ app.post("/api/demo/validate", apiLimiter, async (req, res) => {
 
         if (!key) {
             log(`[Demo Key] No key provided in request`)
+            // Set CORS headers
+            if (req.headers.origin) {
+                res.header('Access-Control-Allow-Origin', req.headers.origin)
+                res.header('Access-Control-Allow-Credentials', 'true')
+            }
             return res.status(400).json({
                 valid: false,
                 message: "Demo key is required"
@@ -9262,6 +9278,10 @@ app.post("/api/demo/validate", apiLimiter, async (req, res) => {
         if (trimmedKey === expectedKey) {
             log(`[Demo Key] ✅ Valid key accepted: 12121`)
 
+            // Set CORS headers
+            res.header('Access-Control-Allow-Origin', req.headers.origin || '*')
+            res.header('Access-Control-Allow-Credentials', 'true')
+            
             return res.json({
                 valid: true,
                 message: "Demo key is valid"
@@ -9270,6 +9290,10 @@ app.post("/api/demo/validate", apiLimiter, async (req, res) => {
 
         log(`[Demo Key] ❌ Invalid key rejected: "${trimmedKey}" (expected: "${expectedKey}")`)
 
+        // Set CORS headers
+        res.header('Access-Control-Allow-Origin', req.headers.origin || '*')
+        res.header('Access-Control-Allow-Credentials', 'true')
+        
         res.json({
             valid: false,
             message: "Invalid demo key. Please check and try again."
@@ -9279,7 +9303,8 @@ app.post("/api/demo/validate", apiLimiter, async (req, res) => {
         log(`[Demo Key] Error stack: ${error.stack}`, "error")
         res.status(500).json({
             valid: false,
-            message: "Error validating key. Please try again."
+            message: "Error validating key. Please try again.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         })
     }
 })
