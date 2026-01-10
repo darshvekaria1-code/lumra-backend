@@ -655,6 +655,82 @@
       ],
       "createdAt": 1764163684512,
       "updatedAt": 1764165190249
+    },
+    {
+      "id": "conv_1767977946135_i7z32jcte",
+      "title": "what do i have in my calender check and tell me wh...",
+      "messages": [
+        {
+          "role": "user",
+          "content": "what do i have in my calender check and tell me whats upcomming",
+          "timestamp": 1767977946134,
+          "imageUrl": null
+        },
+        {
+          "role": "assistant",
+          "content": "I'm Lumra AI, your AI learning assistant. I don’t have access to your personal calendar or schedule, so I can't directly view or check your upcoming events or appointments. However, if you share details about any events, meetings, or tasks you have scheduled, I’d be happy to discuss them and provide relevant information or suggestions. Please let me know how else I can assist you!",
+          "timestamp": 1767977946134,
+          "imageUrl": null
+        },
+        {
+          "role": "user",
+          "content": "whats upcoming in my calender",
+          "timestamp": 1767978203457,
+          "imageUrl": null
+        },
+        {
+          "role": "assistant",
+          "content": "I'm Lumra AI, your AI learning assistant. I don't have access to your personal calendar or any private information, so I can't view or check your upcoming events, appointments, or tasks. If you need assistance with specific events or scheduling, please share the details, and I can provide relevant information or tips related to those events. Let me know how I can help!",
+          "timestamp": 1767978203457,
+          "imageUrl": null
+        }
+      ],
+      "createdAt": 1767977946135,
+      "updatedAt": 1767978203458
+    },
+    {
+      "id": "conv_1767978520020_47qg9m0nz",
+      "title": "what do i have in my calender check and tell me wh...",
+      "messages": [
+        {
+          "role": "user",
+          "content": "what do i have in my calender check and tell me whats upcomming",
+          "timestamp": 1767977946134,
+          "imageUrl": null
+        },
+        {
+          "role": "assistant",
+          "content": "I'm Lumra AI, your AI learning assistant. I don’t have access to your personal calendar or schedule, so I can't directly view or check your upcoming events or appointments. However, if you share details about any events, meetings, or tasks you have scheduled, I’d be happy to discuss them and provide relevant information or suggestions. Please let me know how else I can assist you!",
+          "timestamp": 1767977946134,
+          "imageUrl": null
+        },
+        {
+          "role": "user",
+          "content": "whats upcoming in my calender",
+          "timestamp": 1767978203457,
+          "imageUrl": null
+        },
+        {
+          "role": "assistant",
+          "content": "I'm Lumra AI, your AI learning assistant. I don't have access to your personal calendar or any private information, so I can't view or check your upcoming events, appointments, or tasks. If you need assistance with specific events or scheduling, please share the details, and I can provide relevant information or tips related to those events. Let me know how I can help!",
+          "timestamp": 1767978203457,
+          "imageUrl": null
+        },
+        {
+          "role": "user",
+          "content": "whats upcomming in my calender",
+          "timestamp": 1767978520020,
+          "imageUrl": null
+        },
+        {
+          "role": "assistant",
+          "content": "I'm Lumra AI, your AI learning assistant. I don’t have access to your personal calendar or the ability to view your events directly. However, if you share specific details about your upcoming events, I’d be happy to help you with information or suggestions related to them. Let me know how I can assist you!",
+          "timestamp": 1767978520020,
+          "imageUrl": null
+        }
+      ],
+      "createdAt": 1767978520020,
+      "updatedAt": 1767978520020
     }
   ],
   "typicaldarsh123@gmail.com": [

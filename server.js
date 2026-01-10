@@ -29,6 +29,47 @@ const LOG_FILE = join(__dirname, "server.log")
 // Conversations Storage File
 const CONVERSATIONS_FILE = join(__dirname, "conversations.json")
 
+// Calendar Storage File
+const CALENDAR_FILE = join(__dirname, "calendar.json")
+
+// Load calendar data
+function loadCalendar() {
+    if (existsSync(CALENDAR_FILE)) {
+        try {
+            const data = readFileSync(CALENDAR_FILE, "utf-8")
+            return JSON.parse(data)
+        } catch (error) {
+            log(`[Calendar] Error loading calendar: ${error.message}`, "error")
+            return {}
+        }
+    }
+    return {}
+}
+
+// Save calendar data
+function saveCalendar(data) {
+    try {
+        writeFileSync(CALENDAR_FILE, JSON.stringify(data, null, 2), "utf-8")
+        return true
+    } catch (error) {
+        log(`[Calendar] Error saving calendar: ${error.message}`, "error")
+        return false
+    }
+}
+
+// Get user's calendar events
+function getUserCalendar(userEmail) {
+    const calendarData = loadCalendar()
+    return calendarData[userEmail] || { events: [], dueDates: [], classes: [] }
+}
+
+// Save user's calendar events
+function saveUserCalendar(userEmail, calendarData) {
+    const allCalendars = loadCalendar()
+    allCalendars[userEmail] = calendarData
+    saveCalendar(allCalendars)
+}
+
 // Enhanced logging function that writes to both console and file
 function log(message, type = 'log') {
     const timestamp = new Date().toISOString()
@@ -6444,6 +6485,85 @@ The uploaded documents are: ${docNames}`
     const userIdentifier = req.user?.email || req.user?.id || userId || "anonymous"
     log(`[RAG] 🔍 User identifier for RAG: "${userIdentifier}" (from req.user: ${req.user?.email || req.user?.id || 'none'}, userId param: ${userId || 'not provided'})`)
     
+    // Check if this is a calendar-related query (expanded keywords)
+    const calendarKeywords = [
+        'calendar', 'upcoming', 'due date', 'due dates', 'assignment', 'homework', 
+        'deadline', 'schedule', 'event', 'events', 'what\'s coming', 'what is coming', 
+        'whats coming', 'when is', 'when are', 'what do i have', 'what\'s on my calendar',
+        'whats on my calendar', 'what\'s upcoming', 'whats upcoming', 'what is upcoming',
+        'show me my', 'tell me about my', 'my assignments', 'my deadlines', 'my schedule',
+        'tok', 'ee submission', 'extended essay', 'theory of knowledge'
+    ]
+    const promptLower = prompt.toLowerCase()
+    const isCalendarQuery = calendarKeywords.some(keyword => promptLower.includes(keyword))
+    
+    log(`[Calendar] Query check: "${prompt.substring(0, 50)}..." | Is calendar query: ${isCalendarQuery}`)
+    
+    // Get user's calendar data if it's a calendar query
+    let calendarContext = ""
+    if (isCalendarQuery) {
+        try {
+            const userEmail = req.user?.email || userIdentifier
+            const calendarData = getUserCalendar(userEmail)
+            
+            if (calendarData.dueDates && calendarData.dueDates.length > 0) {
+                const today = new Date()
+                const currentMonth = today.getMonth()
+                const currentYear = today.getFullYear()
+                
+                // Format upcoming due dates
+                const upcomingDueDates = calendarData.dueDates
+                    .map(due => {
+                        const [day, month] = due.dueDate.split('/')
+                        const dueDate = new Date(currentYear, parseInt(month) - 1, parseInt(day))
+                        const daysUntil = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
+                        
+                        return {
+                            ...due,
+                            daysUntil,
+                            isPast: daysUntil < 0,
+                            isToday: daysUntil === 0,
+                            isUpcoming: daysUntil > 0
+                        }
+                    })
+                    .sort((a, b) => a.daysUntil - b.daysUntil)
+                
+                const upcoming = upcomingDueDates.filter(d => d.isUpcoming || d.isToday)
+                const past = upcomingDueDates.filter(d => d.isPast)
+                
+                calendarContext = `\n\n=== USER'S CALENDAR INFORMATION ===
+The user is asking about their calendar. Here is their calendar data:
+
+UPCOMING DUE DATES:
+${upcoming.length > 0 ? upcoming.map(d => `- ${d.subject} - Due: ${d.dueDate} (${d.daysUntil === 0 ? 'TODAY' : d.daysUntil === 1 ? 'TOMORROW' : `in ${d.daysUntil} days`})`).join('\n') : 'No upcoming due dates'}
+
+PAST DUE DATES:
+${past.length > 0 ? past.map(d => `- ${d.subject} - Due: ${d.dueDate} (${Math.abs(d.daysUntil)} days ago)`).join('\n') : 'No past due dates'}
+
+ALL DUE DATES (for reference):
+${calendarData.dueDates && calendarData.dueDates.length > 0 ? calendarData.dueDates.map(d => `- ${d.subject} - Due: ${d.dueDate}`).join('\n') : 'No due dates'}
+
+CLASSES:
+${calendarData.classes && calendarData.classes.length > 0 ? calendarData.classes.map(c => `- ${c.block} ${c.level}: ${c.name} with ${c.teacher}`).join('\n') : 'No classes listed'}
+
+CRITICAL INSTRUCTIONS:
+1. When the user asks "what's upcoming in my calendar" or similar questions, list ALL upcoming due dates from the UPCOMING DUE DATES section above
+2. Be specific about dates, subjects, and how many days until each deadline
+3. If they ask about specific items (like "TOK" or "EE submission"), find them in the calendar data and tell them the exact due date
+4. Always use the information from this calendar data - do NOT make up dates or events
+5. Format your response clearly, listing each upcoming item with its due date`
+                
+                log(`[Calendar] Added calendar context to prompt (${upcoming.length} upcoming, ${past.length} past due dates, ${calendarData.dueDates?.length || 0} total)`)
+            } else {
+                calendarContext = `\n\n=== CALENDAR QUERY DETECTED ===
+The user is asking about their calendar, but no calendar data is currently available. You can let them know they can add events to their calendar through the dashboard.`
+                log(`[Calendar] Calendar query detected but no data available`)
+            }
+        } catch (calendarError) {
+            log(`[Calendar] Error loading calendar context: ${calendarError.message}`, "error")
+        }
+    }
+    
     // VERIFY: Check if user has documents AFTER auto-upload (if any happened)
     // Wait a moment for auto-upload to complete if documents were just uploaded
     if (documentFiles.length > 0) {
@@ -6809,6 +6929,12 @@ IMPORTANT RULES:
 REMEMBER: You ARE able to see and analyze images - they are provided to you in this conversation. Use your vision capabilities to analyze them.`
         adaptiveSystemPrompt = adaptiveSystemPrompt ? adaptiveSystemPrompt + imageInstruction : imageInstruction.trim()
         log(`[Image Analysis] ✅ Added image analysis instructions to system prompt (${imageFiles.length} image(s))`)
+    }
+    
+    // Add calendar context if it's a calendar-related query
+    if (calendarContext) {
+        adaptiveSystemPrompt = adaptiveSystemPrompt ? adaptiveSystemPrompt + calendarContext : calendarContext.trim()
+        log(`[Calendar] ✅ Added calendar context to system prompt`)
     }
 
     try {
@@ -9083,9 +9209,22 @@ app.get("/api/demo/requests", requireDeveloperAuth, async (req, res) => {
 
 app.post("/api/demo/validate", apiLimiter, async (req, res) => {
     try {
-        // First check if demo keys are revoked
-        const revocationStatus = loadDemoKeyRevocation()
-        if (revocationStatus.revoked) {
+        log(`[Demo Key] Validation request received`)
+        log(`[Demo Key] Request body: ${JSON.stringify(req.body)}`)
+        
+        // First check if demo keys are revoked (with error handling)
+        let revocationStatus
+        try {
+            revocationStatus = loadDemoKeyRevocation()
+            log(`[Demo Key] Revocation status loaded: ${JSON.stringify(revocationStatus)}`)
+        } catch (revError) {
+            log(`[Demo Key] Error loading revocation status: ${revError.message}`, "error")
+            log(`[Demo Key] Revocation error stack: ${revError.stack}`, "error")
+            // Default to not revoked if we can't load the status
+            revocationStatus = { revoked: false, revokedAt: null, revokedBy: null }
+        }
+
+        if (revocationStatus && revocationStatus.revoked === true) {
             log(`[Demo Key] Validation rejected - demo keys are revoked`)
             return res.json({
                 valid: false,
@@ -9094,20 +9233,34 @@ app.post("/api/demo/validate", apiLimiter, async (req, res) => {
             })
         }
 
-        const { key } = req.body
+        // Extract key from request body (handle different formats)
+        let key = req.body?.key || req.body?.demoKey || req.body?.keyValue
+        
+        // If key is not in body, check query params as fallback
+        if (!key) {
+            key = req.query?.key || req.query?.demoKey
+        }
 
-        if (!key || typeof key !== "string") {
+        if (!key) {
+            log(`[Demo Key] No key provided in request`)
             return res.status(400).json({
                 valid: false,
                 message: "Demo key is required"
             })
         }
 
-        const trimmedKey = key.trim()
-
-        // Only accept the specific demo key: 112211
-        if (trimmedKey === "112211") {
-            log(`[Demo Key] Valid key used: 112211`)
+        // Normalize the key: convert to string, trim whitespace
+        const trimmedKey = String(key).trim()
+        const expectedKey = "12121"
+        
+        log(`[Demo Key] Raw key received: ${JSON.stringify(key)}`)
+        log(`[Demo Key] Key type: ${typeof key}`)
+        log(`[Demo Key] Trimmed key: "${trimmedKey}" (length: ${trimmedKey.length})`)
+        log(`[Demo Key] Expected key: "${expectedKey}" (length: ${expectedKey.length})`)
+        
+        // Simple, direct comparison
+        if (trimmedKey === expectedKey) {
+            log(`[Demo Key] ✅ Valid key accepted: 12121`)
 
             return res.json({
                 valid: true,
@@ -9115,17 +9268,81 @@ app.post("/api/demo/validate", apiLimiter, async (req, res) => {
             })
         }
 
-        log(`[Demo Key] Invalid key attempted: ${trimmedKey.substring(0, 8)}...`)
+        log(`[Demo Key] ❌ Invalid key rejected: "${trimmedKey}" (expected: "${expectedKey}")`)
 
         res.json({
             valid: false,
             message: "Invalid demo key. Please check and try again."
         })
     } catch (error) {
-        log(`[Demo Key] Error validating demo key: ${error.message}`, "error")
+        log(`[Demo Key] ⚠️ Error validating demo key: ${error.message}`, "error")
+        log(`[Demo Key] Error stack: ${error.stack}`, "error")
         res.status(500).json({
             valid: false,
             message: "Error validating key. Please try again."
+        })
+    }
+})
+
+// Test endpoint removed for security - do not expose demo key
+
+// Calendar API endpoints
+app.get("/api/calendar", authenticateToken, (req, res) => {
+    try {
+        const userEmail = req.user?.email
+        if (!userEmail) {
+            return res.status(400).json({
+                success: false,
+                error: "User email not found"
+            })
+        }
+        
+        const calendarData = getUserCalendar(userEmail)
+        res.json({
+            success: true,
+            calendar: calendarData
+        })
+    } catch (error) {
+        log(`[Calendar] Error getting calendar: ${error.message}`, "error")
+        res.status(500).json({
+            success: false,
+            error: "Failed to get calendar data"
+        })
+    }
+})
+
+app.post("/api/calendar", authenticateToken, (req, res) => {
+    try {
+        const userEmail = req.user?.email
+        if (!userEmail) {
+            return res.status(400).json({
+                success: false,
+                error: "User email not found"
+            })
+        }
+        
+        const { events, dueDates, classes } = req.body
+        
+        const calendarData = {
+            events: events || [],
+            dueDates: dueDates || [],
+            classes: classes || [],
+            updatedAt: new Date().toISOString()
+        }
+        
+        saveUserCalendar(userEmail, calendarData)
+        
+        log(`[Calendar] Saved calendar data for user: ${userEmail}`)
+        
+        res.json({
+            success: true,
+            message: "Calendar data saved successfully"
+        })
+    } catch (error) {
+        log(`[Calendar] Error saving calendar: ${error.message}`, "error")
+        res.status(500).json({
+            success: false,
+            error: "Failed to save calendar data"
         })
     }
 })
